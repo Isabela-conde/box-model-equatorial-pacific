@@ -1,0 +1,43 @@
+# --- macOS / OS junk ---
+.DS_Store
+.AppleDouble
+Thumbs.db
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Julia ---
+*.jl.cov
+*.jl.mem
+# (Manifest.toml kept on purpose, for reproducibility)
+
+# --- Large data / model output: keep these OUT of git ---
+# (delete a line if a repo genuinely needs to track that type)
+*.nc
+*.h5
+*.hdf5
+*.jld2
+*.zarr
+*.npy
+*.npz
+*.mat
+
+# --- logs / secrets / temp ---
+*.log
+.env
+
+# --- this project: run output & media are regenerated, keep OUT of git ---
+runs/
+initial_code_videos/
+*.png
+*.mp4
+*.mov
+*.gif
