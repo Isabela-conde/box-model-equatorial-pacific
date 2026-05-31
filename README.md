@@ -1,6 +1,6 @@
-# toy_model_surface_wind_flux_increase
+# box-model-equatorial-pacific
 
-A toy model exploring the response to an increase in surface wind / heat flux, based on a Zebiak–Cane-style setup.
+A box / toy model of the equatorial Pacific, exploring the response to an increase in surface wind / heat flux, based on a Zebiak–Cane-style setup.
 
 ## What's here
 
