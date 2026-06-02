@@ -64,6 +64,21 @@ end
 @inline south_T_flux_bc(x, z, t, p) = south_T_flux(x, z, p)
 
 ################################################
+#### Surface heat flux (SST restoring) ####
+################################################
+# Oceananigans sign convention: a POSITIVE top T-flux removes heat (cooling).
+# So a stable relaxation toward T_target must be  F = +λ_T (T - T_target):
+# when T > T_target the flux is positive → cooling → pulls T back down
+# (NEGATIVE feedback).  Equilibrium SST → T_target.
+#
+# ⚠ Earlier this had the sign flipped (F = Q₀ - λ_T(T-T_restore)), which is an
+# ANTI-restoring positive feedback — it made the equilibrium a repeller and the
+# surface temperature ran away (hot → 156 °C crash, or cold → homogenised).
+@inline function surface_T_flux_bc(x, y, t, T, p)
+    return p.λ_T * (T - p.T_target)
+end
+
+################################################
 #### Boundary sponge — damp u and v only ####
 ################################################
 
@@ -78,8 +93,17 @@ end
            p.north_south_strength * north_south_mask
 end
 
-@inline sponge_u(x, y, z, t, u, p) = -p.λ₀ * sponge_mask(x, y, p) * u
-@inline sponge_v(x, y, z, t, v, p) = -p.λ₀ * sponge_mask(x, y, p) * v
+# Depth-dependent Rayleigh drag: ~0 above z_damp_top, ramps to 1 below
+# z_damp_bottom.  Relaxes deep flow to rest so zonal momentum does not
+# accumulate below the EUC and the EUC stays confined to the upper ocean.
+@inline function deep_mask(z, p)
+    return clamp((p.z_damp_top - z) / (p.z_damp_top - p.z_damp_bottom), 0.0, 1.0)
+end
+
+@inline sponge_u(x, y, z, t, u, p) =
+    -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * u
+@inline sponge_v(x, y, z, t, v, p) =
+    -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * v
 
 ################################################
 #### Salinity boundary condition ####
@@ -129,9 +153,20 @@ function build_model()
     #### Temperature boundary conditions ####
     ################################################
 
-    Q   = 200
     cᴾ  = 3991
-    Jᵀ  = Q / (ρₒ * cᴾ)
+
+    # SST-restoring piston velocity.  λ_T [m s⁻¹] = (λ in W m⁻² K⁻¹)/(ρₒ cᴾ).
+    # λ_T = 2e-5 ≈ 80 W m⁻² K⁻¹ → restoring timescale over a 50 m layer ≈ 29 days.
+    # Surface relaxes toward T_target; add a constant offset later if you want a
+    # net heat input, but keep the (T - T_target) term's sign POSITIVE.
+    λ_T      = 2e-5
+    T_target = 28.0
+
+    surface_T_flux_parameters = (; λ_T, T_target)
+
+    surface_T_bc = FluxBoundaryCondition(surface_T_flux_bc,
+                                         field_dependencies = :T,
+                                         parameters         = surface_T_flux_parameters)
 
     north_T_flux_parameters = (;
         Lx,
@@ -144,7 +179,7 @@ function build_model()
     )
 
     T_bcs = FieldBoundaryConditions(
-        top    = FluxBoundaryCondition(Jᵀ),
+        top    = surface_T_bc,
         bottom = FluxBoundaryCondition(0),
         north  = FluxBoundaryCondition(north_T_flux_bc, parameters = north_T_flux_parameters),
         south  = FluxBoundaryCondition(south_T_flux_bc, parameters = south_T_flux_parameters)
@@ -208,6 +243,12 @@ function build_model()
     east_west_strength   = 1.0
     north_south_strength = 1.0
 
+    # Deep Rayleigh drag: zero in the upper ~300 m (where the EUC lives),
+    # full strength below ~550 m.  λ_deep sets the deep spin-down timescale.
+    z_damp_top    = -300.0
+    z_damp_bottom = -550.0
+    λ_deep        = 1 / 20days
+
     sponge_params = (;
         sponge_width_x,
         sponge_width_y,
@@ -215,7 +256,10 @@ function build_model()
         Ly,
         λ₀,
         east_west_strength,
-        north_south_strength
+        north_south_strength,
+        z_damp_top,
+        z_damp_bottom,
+        λ_deep
     )
 
     u_forcing = Forcing(sponge_u; field_dependencies = :u, parameters = sponge_params)
@@ -231,7 +275,31 @@ function build_model()
 
     coriolis = BetaPlane(latitude = 0, β = β)
 
-    closure = ScalarDiffusivity(ν = 1e-4, κ = 1e-5)
+    # Vertical mixing: tiny background (preserve the thermocline) PLUS a
+    # convective-adjustment safety valve.  A hydrostatic model cannot represent
+    # convection, so when a column goes statically unstable (N² < 0) it must be
+    # removed or the model blows up.  convective_κz fires ONLY where N² < 0, so
+    # with a correct (restoring) surface heat flux it acts rarely instead of
+    # homogenising the column.  convective_νz = 0 leaves the EUC momentum to the
+    # biharmonic + Rayleigh drag.  Implicit, so it doesn't constrain Δt.
+    vertical_mixing = ConvectiveAdjustmentVerticalDiffusivity(
+        convective_κz = 1.0,
+        convective_νz = 0.0,
+        background_κz = 1e-5,
+        background_νz = 1e-3)
+
+    # Horizontal mixing: BIHARMONIC viscosity on MOMENTUM ONLY (κ defaults to 0).
+    # Scale-selective — it damps the 2Δx grid-scale checkerboard noise (the
+    # vertical stripes in w) by smoothing the velocity field that generates it,
+    # while leaving the 1000s-of-km EUC almost untouched.
+    #
+    # NOTE: biharmonic is deliberately NOT applied to tracers.  Unlike Laplacian,
+    # biharmonic diffusion is not sign-preserving and overshoots near sharp
+    # gradients (the halocline); a κ here drove S negative → TEOS10 sqrt crash.
+    # Tracers rely on WENO advection (overshoot-limited) + the small vertical κ.
+    horizontal_mixing = HorizontalScalarBiharmonicDiffusivity(ν = 1e12)
+
+    closure = (vertical_mixing, horizontal_mixing)
 
 
     model = HydrostaticFreeSurfaceModel(
@@ -343,6 +411,36 @@ function run_model(output_dir;
                    (; T, S, u, v, w, dTdz),
                    filename           = output_file,
                    schedule           = TimeInterval(save_interval),
+                   overwrite_existing = true)
+
+    ################################################
+    #### Momentum spin-down diagnostics ####
+    ################################################
+    # Volume-integrated zonal momentum split into the upper ocean (where the
+    # EUC lives) and the deep ocean (below the Rayleigh-drag region).  U_deep
+    # should relax toward ~0 and stay there if the deep ocean is spinning down;
+    # if it keeps growing, increase λ_deep / raise z_damp_top.  U_deep_abs uses
+    # |u| so opposite-sign deep flows can't cancel and hide residual momentum.
+    z_diag = -300.0
+
+    deep_mask_field  = Field{Center, Center, Center}(grid)
+    upper_mask_field = Field{Center, Center, Center}(grid)
+    set!(deep_mask_field,  (x, y, z) -> z <  z_diag ? 1.0 : 0.0)
+    set!(upper_mask_field, (x, y, z) -> z >= z_diag ? 1.0 : 0.0)
+
+    U_deep      = Field(Integral(u * deep_mask_field))        # ∫ u dV,   z < -300 m
+    U_upper     = Field(Integral(u * upper_mask_field))       # ∫ u dV,   z ≥ -300 m
+    U_deep_abs  = Field(Integral(abs(u) * deep_mask_field))   # ∫ |u| dV, z < -300 m
+    KE_deep     = Field(Integral(u^2 * deep_mask_field))      # ∫ u² dV,  z < -300 m
+
+    ts_interval = 24hours
+    ts_file     = joinpath(output_dir, filename * "_momentum.jld2")
+
+    simulation.output_writers[:momentum] =
+        JLD2Writer(model,
+                   (; U_deep, U_upper, U_deep_abs, KE_deep),
+                   filename           = ts_file,
+                   schedule           = TimeInterval(ts_interval),
                    overwrite_existing = true)
 
     run!(simulation)

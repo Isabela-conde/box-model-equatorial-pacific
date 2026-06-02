@@ -34,7 +34,7 @@ south_T_flux_parameters,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 1000days)
+          stop_time = 100days)
 
 
 
@@ -42,6 +42,9 @@ run_model(output_dir;
 plot_surface_wind_profile(grid,
                          τx_parameters,
                          output_dir)
+
+momentum_file = joinpath(output_dir, filename * "_momentum.jld2")
+plot_momentum_diagnostics(momentum_file, output_dir)
 
 # plot_equator_full_depth(filepath,
 #                        grid,

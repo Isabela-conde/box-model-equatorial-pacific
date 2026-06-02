@@ -710,3 +710,38 @@ end
 function plot_surface_wind_boundary(grid, τx_parameters, output_dir)
     plot_surface_wind_boundary_condition(grid, τx_parameters, output_dir)
 end
+
+# Plot the momentum spin-down diagnostics written to *_momentum.jld2.
+# U_deep relaxing toward ~0 (and U_deep_abs / KE_deep flattening) confirms the
+# deep ocean is spinning down rather than accumulating zonal momentum.
+function plot_momentum_diagnostics(ts_file, output_dir)
+
+    U_deep     = FieldTimeSeries(ts_file, "U_deep")
+    U_upper    = FieldTimeSeries(ts_file, "U_upper")
+    U_deep_abs = FieldTimeSeries(ts_file, "U_deep_abs")
+    KE_deep    = FieldTimeSeries(ts_file, "KE_deep")
+
+    times = U_deep.times ./ 86400  # seconds → days
+
+    val(ts) = [interior(ts[n])[1, 1, 1] for n in 1:length(ts.times)]
+
+    fig = Figure(size = (1100, 800))
+
+    ax1 = Axis(fig[1, 1], xlabel = "time (days)",
+               ylabel = "∫ u dV  (m⁴ s⁻¹)",
+               title = "Volume-integrated zonal momentum")
+    lines!(ax1, times, val(U_upper), label = "upper (z ≥ -300 m)")
+    lines!(ax1, times, val(U_deep),  label = "deep (z < -300 m)")
+    hlines!(ax1, [0.0], color = :black, linestyle = :dash)
+    axislegend(ax1, position = :rt)
+
+    ax2 = Axis(fig[2, 1], xlabel = "time (days)",
+               ylabel = "deep momentum / energy",
+               title = "Deep-ocean spin-down (should flatten)")
+    lines!(ax2, times, val(U_deep_abs), label = "∫ |u| dV  (m⁴ s⁻¹)")
+    lines!(ax2, times, val(KE_deep),    label = "∫ u² dV  (m⁵ s⁻²)")
+    axislegend(ax2, position = :rt)
+
+    save(joinpath(output_dir, "momentum_diagnostics.png"), fig)
+    return fig
+end
