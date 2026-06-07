@@ -29,12 +29,10 @@ cp(joinpath(script_dir, "toy_model.jl"),
 model,
 grid,
 τx_parameters,
-north_T_flux_parameters,
-south_T_flux_parameters,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 100days)
+          stop_time = 500days)
 
 
 
@@ -76,6 +74,24 @@ plot_surface_video(filepath,
 plot_equatorial_band_cross_section(filepath,
                                   grid,
                                   output_dir)
+
+################################################
+#### Last-100-day analysis plots ####
+################################################
+
+# ȳ-mean cross sections (T, b, ∂b/∂z, u) with thermocline overlay:
+plot_ymean_last100(filepath, output_dir; window_days = 100, depth_max = 400.0)
+
+# Equatorial-band (|y| ≤ 250 km) cross sections:
+plot_ymean_last100(filepath, output_dir; window_days = 100, depth_max = 400.0, y_band = 250e3)
+
+# Surface fields (last-100-day mean):
+plot_surface_last100(filepath, output_dir; window_days = 100)
+
+# Surface heat budget — uses the function's default flux params, which track the
+# current model (λ_T=7e-6, evaporation, 70 W/m² solar).  If you change the model's
+# surface-flux params, update plot_surface_heat_budget's defaults (or pass them here).
+plot_surface_heat_budget(filepath, output_dir)
 
 
 # Ly = grid.Ly

@@ -29,6 +29,8 @@ end
     return min(1.0, t / p.spinup_time)
 end
 
+# Resting-ocean ("ocean at rest") bulk stress — kept as a reference profile for
+# plotting; the model now uses the relative-wind stress below.
 @inline function τx_profile(x, y, t, p)
     u10 = surface_u10_profile(y, p)
     τ = p.ρₐ / p.ρₒ * p.cᴰ * u10 * abs(u10)
@@ -36,32 +38,42 @@ end
 end
 
 ################################################
-#### North and south temperature fluxes ####
+#### Relative-wind (current-feedback) stress ####
 ################################################
+# Full bulk stress using the wind RELATIVE to the ocean surface current:
+#   τ = (ρₐ/ρₒ) C_D (U_air − U_ocean) |U_air − U_ocean|.
+# Sign bookkeeping: work in an eastward-positive frame, where the easterly
+# trades are NEGATIVE, so the atmospheric zonal wind is −(wind speed).
+# Oceananigans' top momentum flux has the OPPOSITE sign to the physical stress
+# (a positive top u-flux drives WESTWARD flow), hence the leading minus on the
+# return.  At rest (u = v = 0) this reduces exactly to τx_profile above.
+#
+# The BCs are field-dependent on (u, v): Oceananigans interpolates both to each
+# component's boundary location automatically (same mechanism as the T and S
+# fluxes, which depend on T and S).
+@inline atmospheric_u10(y, p) = -surface_u10_profile(y, p)   # eastward-positive (trades < 0)
 
-@inline function north_T_flux(x, z, p)
-    depth = -z
-    xnorm = x / p.Lx
-    x_shape = 1.0 + 0.25 * sin(2π * xnorm) + 0.10 * sin(6π * xnorm + 0.7)
-    surface_positive  =  1.8 * exp(-(depth / 20)^2)
-    shallow_negative  = -1.3 * exp(-((depth - 80) / 55)^2)
-    deeper_positive   =  0.4 * exp(-((depth - 100) / 150)^2)
-    return p.surface_amp * x_shape * (surface_positive + shallow_negative + deeper_positive)
+@inline function τx_relative(x, y, t, u, v, p)
+    Δu    = atmospheric_u10(y, p) - u      # relative zonal wind
+    Δv    = -v                             # relative meridional wind (no atmospheric v)
+    speed = sqrt(Δu^2 + Δv^2)              # |U_air − U_ocean|
+    τphys = p.ρₐ / p.ρₒ * p.cᴰ * Δu * speed
+    return -τphys * spinup_ramp(t, p)
 end
 
-@inline function south_T_flux(x, z, p)
-    depth = -z
-    xnorm = x / p.Lx
-    x_shape = 1.0 + 0.15 * sin(2π * xnorm + 0.5) + 0.05 * sin(6π * xnorm + 1.2)
-    surface_negative        = -1.8 * exp(-(depth / 20)^2)
-    shallow_positive        =  1.3 * exp(-((depth - 80) / 55)^2)
-    shallow_negative        = -0.22 * exp(-((depth - 320) / 120)^2)
-    shallow_positive_deeper =  0.28 * exp(-((depth - 430) / 70)^2)
-    return p.surface_amp * x_shape * (surface_negative + shallow_positive + shallow_negative + shallow_positive_deeper)
+@inline function τy_relative(x, y, t, u, v, p)
+    Δu    = atmospheric_u10(y, p) - u
+    Δv    = -v
+    speed = sqrt(Δu^2 + Δv^2)
+    τphys = p.ρₐ / p.ρₒ * p.cᴰ * Δv * speed
+    return -τphys * spinup_ramp(t, p)
 end
 
-@inline north_T_flux_bc(x, z, t, p) = north_T_flux(x, z, p)
-@inline south_T_flux_bc(x, z, t, p) = south_T_flux(x, z, p)
+# NOTE: the prescribed north/south wall temperature fluxes were removed — the
+# N/S walls are now INSULATING (zero flux), consistent with the salinity walls
+# and the bottom.  Their job (net-zero vertical heat redistribution at the
+# subtropical edges) is superseded by the poleward heat sink (§ ns_band / sink_T),
+# which provides the actual net heat export and sets the cool subtropical column.
 
 ################################################
 #### Surface heat flux (SST restoring) ####
@@ -74,8 +86,34 @@ end
 # ⚠ Earlier this had the sign flipped (F = Q₀ - λ_T(T-T_restore)), which is an
 # ANTI-restoring positive feedback — it made the equilibrium a repeller and the
 # surface temperature ran away (hot → 156 °C crash, or cold → homogenised).
+#
+# The restoring target is ZONALLY STRUCTURED: a warm pool in the west and a
+# cold-tongue target in the east, with a front in the central/eastern basin.
+# A uniform target pins the whole surface to one value and erases the SST
+# gradient; this anchors the warm-west / cold-east structure (and holds it
+# against the slow warming of the eastern thermocline / upwelling source).
+@inline function T_target_profile(x, p)
+    xnorm = x / p.Lx
+    warm_fraction = 0.5 * (1 - tanh((xnorm - p.x_front) / p.front_width))
+    return p.T_cold + (p.T_warm - p.T_cold) * warm_fraction
+end
+
+# Evaporation rate E(x) [m s⁻¹], enhanced in the warm pool (west).  ONE field
+# drives both the latent cooling here and the salinification in Jˢ.
+@inline function evaporation_rate_profile(x, p)
+    xnorm = x / p.Lx
+    warm  = 0.5 * (1 - tanh((xnorm - p.x_front) / p.front_width))  # 1 west → 0 east
+    return p.E_base + p.E_warm * warm
+end
+
+# Surface heat flux = SST restoring + evaporative (latent) cooling.
+# Oceananigans convention: +ve flux = heat OUT.  Latent cooling is +ve (heat
+# leaves the ocean as the warm pool evaporates), so it cools the surface.
 @inline function surface_T_flux_bc(x, y, t, T, p)
-    return p.λ_T * (T - p.T_target)
+    restoring      = p.λ_T * (T - T_target_profile(x, p))
+    latent_cooling = p.latent_coeff * evaporation_rate_profile(x, p)
+    solar_heating  = -p.Q_solar          # -ve flux = heat INTO the ocean
+    return restoring + latent_cooling + solar_heating
 end
 
 ################################################
@@ -106,11 +144,36 @@ end
     -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * v
 
 ################################################
+#### Poleward heat sink (N/S temperature relaxation) ####
+################################################
+# Relaxes T toward a cool "extratropical" reference profile within the N/S
+# sponge bands — a poleward heat EXPORT.  Warm water carried to the subtropical
+# edges is cooled there, removing the net tropical heat uptake (~+1.15 PW) that
+# the cold-tongue restoring injects.  Without this sink that heat just
+# accumulates and the basin warms indefinitely instead of equilibrating.
+
+# N/S-only mask (1 near the north & south edges, 0 in the interior).
+@inline function ns_band_mask(y, p)
+    south = max(0, (p.sponge_width_y - (y + p.Ly / 2)) / p.sponge_width_y)
+    north = max(0, (y - (p.Ly / 2 - p.sponge_width_y)) / p.sponge_width_y)
+    return max(south^2, north^2)
+end
+
+# Cool extratropical reference column: surface T_surf_ref, deep T_deep_ref.
+@inline function T_extratropical_ref(z, p)
+    return p.T_deep_ref + (p.T_surf_ref - p.T_deep_ref) *
+           0.5 * (1 + tanh((z - p.z_ref) / p.d_ref))
+end
+
+@inline sink_T(x, y, z, t, T, p) =
+    -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
+
+################################################
 #### Salinity boundary condition ####
 ################################################
 
 @inline function Jˢ(x, y, t, S, p)
-    evaporation_flux = -p.evaporation_rate * S
+    evaporation_flux = -evaporation_rate_profile(x, p) * S   # -ve → salinity increases
     restoring_flux   = -p.restore_rate * (S - p.S_surface_target)
     return evaporation_flux + restoring_flux
 end
@@ -139,7 +202,7 @@ function build_model()
 
     grid = RectilinearGrid(CPU(),
                            size     = (Nx, Ny, Nz),
-                           halo     = (3, 3, 3),
+                           halo     = (4, 4, 4),   # ≥4 required for WENO(order=7)
                            x        = (0, Lx),
                            y        = (-Ly/2, Ly/2),
                            z        = z_interfaces,
@@ -156,44 +219,57 @@ function build_model()
     cᴾ  = 3991
 
     # SST-restoring piston velocity.  λ_T [m s⁻¹] = (λ in W m⁻² K⁻¹)/(ρₒ cᴾ).
-    # λ_T = 2e-5 ≈ 80 W m⁻² K⁻¹ → restoring timescale over a 50 m layer ≈ 29 days.
-    # Surface relaxes toward T_target; add a constant offset later if you want a
-    # net heat input, but keep the (T - T_target) term's sign POSITIVE.
-    λ_T      = 2e-5
-    T_target = 28.0
+    # λ_T = 7e-6 ≈ 29 W m⁻² K⁻¹ (a realistic air-sea damping) → restoring timescale
+    # over a 50 m layer ≈ 83 days.  WEAKENED from 2e-5 (≈80 W m⁻² K⁻¹, a stiff
+    # thermostat) so the ocean dynamics + evaporative cooling actually shape SST
+    # instead of being overruled by the restoring.  Target SST is zonally
+    # structured: warm pool (T_warm) west, cold tongue (T_cold) east, front at x_front.
+    λ_T         = 7e-6
+    T_warm      = 29.5     # western warm-pool target
+    T_cold      = 24.0     # eastern cold-tongue target
+    x_front     = 0.6      # front location as fraction of basin width (W→E)
+    front_width = 0.18     # front sharpness (fraction of Lx)
 
-    surface_T_flux_parameters = (; λ_T, T_target)
+    # Warm-pool evaporation → latent cooling (a physical heat sink) + salinification.
+    # E(x) = E_base + E_warm·warm_fraction(x).  E_warm = 3e-8 m/s (~2.6 mm/day) gives
+    # ρ_fw Lᵥ E /(ρₒ cᴾ) ≈ 100 W m⁻² of cooling in the warm pool (~25 W m⁻² in the east).
+    Lᵥ           = 2.5e6      # J kg⁻¹, latent heat of vaporisation
+    ρ_fw         = 1000.0     # kg m⁻³, freshwater density
+    E_base       = 1e-8       # background evaporation (m s⁻¹)
+    E_warm       = 3e-8       # warm-pool evaporation enhancement (m s⁻¹)
+    latent_coeff = ρ_fw * Lᵥ / (ρₒ * cᴾ)   # E (m/s) → kinematic heat flux (°C m s⁻¹)
+
+    # Constant solar heat input (heat IN), set to roughly balance the area-mean
+    # evaporative cooling (~70 W m⁻²) so the net surface heat budget ≈ 0 and SST
+    # stays near target.  The restoring + N/S fluxes then handle the spatial
+    # redistribution.  Tune Q_solar_Wm2 against the surface_heat_budget diagnostic.
+    Q_solar_Wm2 = 70.0
+    Q_solar     = Q_solar_Wm2 / (ρₒ * cᴾ)  # kinematic (°C m s⁻¹)
+
+    surface_T_flux_parameters = (; λ_T, T_warm, T_cold, x_front, front_width, Lx,
+                                   E_base, E_warm, latent_coeff, Q_solar)
 
     surface_T_bc = FluxBoundaryCondition(surface_T_flux_bc,
                                          field_dependencies = :T,
                                          parameters         = surface_T_flux_parameters)
 
-    north_T_flux_parameters = (;
-        Lx,
-        surface_amp = 5e-5
-    )
-
-    south_T_flux_parameters = (;
-        Lx,
-        surface_amp = 5e-5
-    )
-
     T_bcs = FieldBoundaryConditions(
         top    = surface_T_bc,
-        bottom = FluxBoundaryCondition(0),
-        north  = FluxBoundaryCondition(north_T_flux_bc, parameters = north_T_flux_parameters),
-        south  = FluxBoundaryCondition(south_T_flux_bc, parameters = south_T_flux_parameters)
+        bottom = FluxBoundaryCondition(0)
+        # north & south default to zero flux (insulating walls)
     )
 
     ################################################
     #### Salinity boundary conditions ####
     ################################################
 
-    evaporation_rate  = 1e-8
-    restore_rate      = 5e-7
-    S_surface_target  = 34.6
+    restore_rate     = 5e-7
+    S_surface_target = 34.6
 
-    salinity_flux_parameters = (; evaporation_rate, restore_rate, S_surface_target)
+    # Evaporation (E_base, E_warm, front shape) is SHARED with the heat flux, so the
+    # same warm-pool evaporation that cools the surface also makes it saltier.
+    salinity_flux_parameters = (; restore_rate, S_surface_target,
+                                  E_base, E_warm, x_front, front_width, Lx)
 
     evaporation_bc = FluxBoundaryCondition(Jˢ,
                                            field_dependencies = :S,
@@ -223,12 +299,18 @@ function build_model()
         spinup_time
     )
 
+    # Relative-wind stress: both components depend on the surface (u, v).  The
+    # meridional stress τy_relative opposes the ocean's own v (current feedback /
+    # eddy damping) — v now carries a top stress where before it had none.
     u_bcs = FieldBoundaryConditions(
-        top    = FluxBoundaryCondition(τx_profile, parameters = τx_parameters),
+        top    = FluxBoundaryCondition(τx_relative, field_dependencies = (:u, :v),
+                                       parameters = τx_parameters),
         bottom = FluxBoundaryCondition(0)
     )
 
     v_bcs = FieldBoundaryConditions(
+        top    = FluxBoundaryCondition(τy_relative, field_dependencies = (:u, :v),
+                                       parameters = τx_parameters),
         bottom = FluxBoundaryCondition(0)
     )
 
@@ -264,6 +346,28 @@ function build_model()
 
     u_forcing = Forcing(sponge_u; field_dependencies = :u, parameters = sponge_params)
     v_forcing = Forcing(sponge_v; field_dependencies = :v, parameters = sponge_params)
+
+    # Poleward heat sink: relax T toward a cool extratropical profile in the N/S
+    # bands so the net tropical heat uptake is exported and the basin equilibrates.
+    # λ_T_sink sets the sink timescale; T_surf_ref the cool subtropical surface.
+    # Tune against the surface_heat_budget diagnostic (dHC/dt should → 0).
+    λ_T_sink   = 1 / 20days
+    T_surf_ref = 22.0      # cool extratropical surface (°C)
+    T_deep_ref = 3.5       # deep reference (matches initial deep T → no deep nudging)
+    z_ref      = -150.0    # reference thermocline depth (m)
+    d_ref      = 120.0     # reference thermocline thickness (m)
+
+    sink_params = (;
+        sponge_width_y,
+        Ly,
+        λ_T_sink,
+        T_surf_ref,
+        T_deep_ref,
+        z_ref,
+        d_ref
+    )
+
+    T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
 
     ################################################
     #### Model ####
@@ -310,9 +414,14 @@ function build_model()
         coriolis            = coriolis,
         closure             = closure,
         momentum_advection  = WENO(order = 3),
-        tracer_advection    = WENO(order = 3),
+        # High-order tracer advection: order-3 WENO is the most diffusive WENO and
+        # was numerically mixing heat across the sharp thermocline (eroding the
+        # eastern cold tongue's source water).  Order 7 has far less spurious
+        # diapycnal mixing while staying non-oscillatory, so the thermocline
+        # stays sharp.  (Needs grid halo ≥ 4 — set above.)
+        tracer_advection    = WENO(order = 7),
         boundary_conditions = (u = u_bcs, v = v_bcs, T = T_bcs, S = S_bcs),
-        forcing             = (u = u_forcing, v = v_forcing)
+        forcing             = (u = u_forcing, v = v_forcing, T = T_forcing)
     )
 
     ################################################
@@ -353,7 +462,7 @@ function build_model()
 
     set!(model, u = 0, v = 0, w = 0, T = Tᵢ, S = Sᵢ)
 
-    return model, grid, τx_parameters, north_T_flux_parameters, south_T_flux_parameters
+    return model, grid, τx_parameters
 end
 
 ################################################
@@ -366,16 +475,10 @@ function run_model(output_dir;
                    plot_boundary_conditions = false,
                    plot_initial_conditions  = false)
 
-    model, grid, τx_parameters,
-    north_T_flux_parameters,
-    south_T_flux_parameters = build_model()
+    model, grid, τx_parameters = build_model()
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)
-        plot_north_south_T_flux(north_T_flux, south_T_flux,
-                                north_T_flux_parameters,
-                                south_T_flux_parameters,
-                                output_dir)
     end
 
     if plot_initial_conditions
@@ -445,8 +548,5 @@ function run_model(output_dir;
 
     run!(simulation)
 
-    return model, grid, τx_parameters,
-           north_T_flux_parameters,
-           south_T_flux_parameters,
-           output_file
+    return model, grid, τx_parameters, output_file
 end
