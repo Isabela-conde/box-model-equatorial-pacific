@@ -41,7 +41,7 @@ y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg; lat_edge = (Ly/2)/deg
 npk = np.exp(-((lat-jet_lat)/jet_width)**2)
 spk = np.exp(-((lat+jet_lat)/jet_width)**2)
 peak = np.maximum(npk, spk); eqs = np.exp(-(lat/8.0)**2)
-shape = (peak + 0.9*eqs)*np.cos(np.pi*lat/(2*lat_edge))**2/1.2
+shape = (peak + 0.9*eqs)/1.858   # no edge taper; renormalised so peak u10 unchanged
 u10 = u10_trades*shape
 tau_kin = rhoa/rho0*cD*u10*np.abs(u10)     # m^2 s^-2
 tau_Nm2 = tau_kin*rho0                       # N m^-2

@@ -1084,3 +1084,150 @@ function plot_surface_heat_budget(filepath, output_dir;
     @info "Saved $outfile"
     return fig
 end
+
+################################################
+#### Meridional (zonal-mean) cross sections, last 100 days ####
+################################################
+# Map an equatorial-Pacific longitude to model x.  The idealised basin is assumed
+# to span lon_W (western boundary) → lon_E (eastern boundary), measured eastward
+# (wrapping the dateline).  Longitudes are °E in [-180,180], so 140°W = -140.
+# Default span 120°E → 80°W (160°): 140°W ≈ 0.625 Lx, 110°W ≈ 0.81 Lx.
+@inline function pacific_lon_to_x(lon; Lx = 1.5e7, lon_W = 120.0, lon_E = -80.0)
+    east_span = mod(lon_E - lon_W, 360)
+    east_pos  = mod(lon   - lon_W, 360)
+    return Lx * east_pos / east_span
+end
+
+# Like plot_ymean_last100 but with LATITUDE on the horizontal axis: shows the EUC's
+# equatorial trapping and the thermocline structure vs latitude.  Choose the
+# longitude treatment with exactly one of:
+#   xloc = x              → single-longitude section (nearest grid column)
+#   x_range = (x0, x1)    → average a longitude band (metres)
+#   (neither)             → full zonal mean
+# label / tag override the auto title and output filename (e.g. "≈140°W", "140W").
+function plot_meridional_last100(filepath, output_dir;
+                                 window_days       = 100,
+                                 depth_max         = 400.0,
+                                 reference_density = 1026.0,
+                                 x_range           = nothing,
+                                 xloc              = nothing,
+                                 label             = nothing,
+                                 tag               = nothing)
+
+    Tts = FieldTimeSeries(filepath, "T")
+    Sts = FieldTimeSeries(filepath, "S")
+    uts = FieldTimeSeries(filepath, "u")
+
+    grid  = Tts.grid
+    times = Tts.times
+
+    xc = xnodes(grid, Center(), Center(), Center())
+    yc = ynodes(grid, Center(), Center(), Center())
+    zc = znodes(grid, Center(), Center(), Center())
+    Nx = length(xc)
+    Ny = length(yc)
+
+    if xloc !== nothing
+        ic         = argmin(abs.(xc .- xloc))      # nearest grid column
+        isel       = [ic]
+        band_label = label === nothing ? @sprintf("x = %.0f km", xc[ic] / 1e3) : label
+        band_tag   = tag   === nothing ? @sprintf("x%05dkm", round(Int, xc[ic] / 1e3)) : tag
+    elseif x_range !== nothing
+        isel       = findall(x -> x_range[1] <= x <= x_range[2], xc)
+        band_label = label === nothing ?
+                     @sprintf("x∈[%.0f,%.0f] km mean", x_range[1] / 1e3, x_range[2] / 1e3) : label
+        band_tag   = tag === nothing ?
+                     @sprintf("xband%04d-%04dkm", round(Int, x_range[1] / 1e3),
+                              round(Int, x_range[2] / 1e3)) : tag
+    else
+        isel       = collect(1:Nx)
+        band_label = label === nothing ? "zonal-mean" : label
+        band_tag   = tag   === nothing ? "zonalmean" : tag
+    end
+
+    t_end  = times[end]
+    idxs   = findall(t -> t >= t_end - window_days * days, times)
+    i0, i1 = first(idxs), last(idxs)
+    nwin   = length(idxs)
+    @info "Averaging frames $i0:$i1 ($nwin frames), days " *
+          @sprintf("%.0f-%.0f", times[i0] / days, times[i1] / days)
+
+    eos = TEOS10EquationOfState(reference_density = reference_density)
+
+    T0 = interior(Tts[i0])
+    Nz = size(T0, 3)
+
+    Tmean = zeros(Nx, Ny, Nz)
+    bmean = zeros(Nx, Ny, Nz)
+    umean = zeros(Nx, Ny, Nz)
+
+    # u sits on x-faces; interpolate to centres so it shares xc before x-averaging
+    interp_u(u) = size(u, 1) == Nx ? u : 0.5 .* (u[1:end-1, :, :] .+ u[2:end, :, :])
+
+    for n in idxs
+        T = interior(Tts[n]); S = interior(Sts[n]); u = interior(uts[n])
+        Tmean .+= T
+        bmean .+= buoyancy_from_TS(T, S, zc, eos)
+        umean .+= interp_u(u)
+    end
+    Tmean ./= nwin; bmean ./= nwin; umean ./= nwin
+
+    # zonal mean over the selected x band → (Ny, Nz)
+    xmean(A) = dropdims(mean(view(A, isel, :, :), dims = 1), dims = 1)
+    Tym = xmean(Tmean)
+    bym = xmean(bmean)
+    uym = xmean(umean)
+
+    # stratification ∂b/∂z down each latitude's column
+    dbdzym = similar(bym)
+    for j in 1:Ny
+        dbdzym[j, :] = ddz(view(bym, j, :), zc)
+    end
+
+    zt = thermocline_depth(dbdzym, zc; depth_max = depth_max)   # z(y)
+
+    ylat = yc ./ 111e3   # latitude in degrees
+
+    panels = [
+        (Tym,    "$band_label temperature  ⟨T⟩ (°C)",        :thermal, :seq),
+        (bym,    "$band_label buoyancy  ⟨b⟩ (m s⁻²)",        :viridis, :seq),
+        (dbdzym, "$band_label stratification  ⟨∂b/∂z⟩ (s⁻²)", :dense,   :seq),
+        (uym,    "$band_label zonal velocity  ⟨u⟩ (m s⁻¹)",   :balance, :div),
+    ]
+
+    fig = Figure(size = (1000, 1250))
+
+    for (row, (A, ttl, cmap, kind)) in enumerate(panels)
+        ax = Axis(fig[row, 1];
+                  title  = ttl,
+                  xlabel = row == length(panels) ? "latitude (°)" : "",
+                  ylabel = "z (m)")
+
+        if kind == :div
+            _, m   = symrange(A)
+            levels = range(-m, m, length = 22)
+        else
+            lo, hi = quantile(vec(A), 0.005), quantile(vec(A), 0.995)
+            levels = range(lo, hi, length = 21)
+        end
+
+        cf = contourf!(ax, ylat, zc, A;
+                       levels = levels, colormap = cmap,
+                       extendlow = :auto, extendhigh = :auto)
+
+        lines!(ax, ylat, zt; color = :red, linewidth = 3.5)
+        ylims!(ax, -depth_max, 0)
+        Colorbar(fig[row, 2], cf)
+    end
+
+    Label(fig[0, 1:2],
+          @sprintf("%s meridional section, last %d-day mean (days %.0f-%.0f) — red line = thermocline (max ∂b/∂z)",
+                   band_label, window_days, times[i0] / days, times[i1] / days);
+          fontsize = 16)
+
+    outfile = joinpath(output_dir,
+                       @sprintf("%s_last%dd_meridional.png", band_tag, window_days))
+    save(outfile, fig)
+    @info "Saved $outfile"
+    return fig
+end

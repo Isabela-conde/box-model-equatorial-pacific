@@ -89,19 +89,23 @@ described in §5.
 
 The wind is a constant easterly trade-wind stress with a realistic meridional
 structure, ramped on over the first 10 days. A 10 m wind speed profile is built
-from off-equatorial maxima at $\pm\varphi_j$ plus an equatorial enhancement,
-tapered to zero at the northern and southern walls:
+from off-equatorial maxima at $\pm\varphi_j$ plus an equatorial enhancement:
 
 $$
-u_{10}(y) = u_{10}^{t}\,\frac{1}{1.2}\,
+u_{10}(y) = \frac{u_{10}^{t}}{1.858}\,
 \Big[\max\!\big(e^{-((\varphi-\varphi_j)/\Delta\varphi)^2},\,
 e^{-((\varphi+\varphi_j)/\Delta\varphi)^2}\big)
-+ 0.9\,e^{-(\varphi/8)^2}\Big]\,
-\cos^2\!\Big(\frac{\pi\varphi}{2\varphi_e}\Big),
++ 0.9\,e^{-(\varphi/8)^2}\Big],
 $$
 
-where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees and
-$\varphi_e = L_y/2$ in degrees.
+where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees. The profile is
+**not** tapered to zero at the meridional walls: a zonal stress is *tangential*
+to those walls (not a singularity), and the velocity sponge (§5.1) absorbs any
+edge flow. Forcing the wind to zero there (an earlier `cos²` taper) imposed a
+sharp $\partial\tau_x/\partial y$ — a spurious wind-stress curl — that drove
+unphysical eastward subtropical flow near $\pm$10°. The normalization (1.858)
+keeps the peak wind at $\approx$7 m s⁻¹; the residual at the wall is
+$\approx$0.9 m s⁻¹, tangential and sponge-damped.
 
 The stress is applied using Large & Yeager bulk formula with feed back from ocean surface currents. The atmospheric wind in an eastward-positive frame
 ($\mathbf{U}_a = (-u_{10},\,0)$ for easterly trades) and the ocean surface

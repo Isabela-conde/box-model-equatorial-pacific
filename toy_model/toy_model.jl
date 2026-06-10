@@ -13,16 +13,13 @@ using Oceananigans.TurbulenceClosures
 
 @inline function surface_u10_profile(y, p)
     lat = y / 111e3
-    lat_edge = p.Ly / 2 / 111e3
-    northern_peak = exp(-((lat - p.jet_lat) / p.jet_width)^2)
-    southern_peak = exp(-((lat + p.jet_lat) / p.jet_width)^2)
-    peak_shape = max(northern_peak, southern_peak)
-    equator_shape = exp(-(lat / 8.0)^2)
-    shape = peak_shape + 0.9 * equator_shape
-    edge_taper = cos(π * lat / (2 * lat_edge))^2
-    shape = shape * edge_taper
-    shape = shape / 1.2
-    return p.u₁₀_trades * shape
+
+    northern_trade = exp(-((lat - p.jet_lat) / p.jet_width)^2)
+    southern_trade = exp(-((lat + p.jet_lat) / p.jet_width)^2)
+
+    trade_shape = max(northern_trade, southern_trade)
+
+    return p.u₁₀_equator + (p.u₁₀_trades - p.u₁₀_equator) * trade_shape
 end
 
 @inline function spinup_ramp(t, p)
@@ -299,9 +296,10 @@ function build_model()
         spinup_time
     )
 
-    # Relative-wind stress: both components depend on the surface (u, v).  The
-    # meridional stress τy_relative opposes the ocean's own v (current feedback /
-    # eddy damping) — v now carries a top stress where before it had none.
+    # Relative-wind (current-feedback) stress: both components depend on the surface
+    # (u, v).  τy_relative opposes the ocean's own v (eddy damping) — v now carries a
+    # top stress where the resting-ocean formulation gave it none.  At rest this
+    # reduces exactly to τx_profile, so it's a clean add-on over the sink-fixed base.
     u_bcs = FieldBoundaryConditions(
         top    = FluxBoundaryCondition(τx_relative, field_dependencies = (:u, :v),
                                        parameters = τx_parameters),
@@ -351,7 +349,8 @@ function build_model()
     # bands so the net tropical heat uptake is exported and the basin equilibrates.
     # λ_T_sink sets the sink timescale; T_surf_ref the cool subtropical surface.
     # Tune against the surface_heat_budget diagnostic (dHC/dt should → 0).
-    λ_T_sink   = 1 / 20days
+    λ_T_sink   = 1 / 150days   # weakened from 1/20days — that removed ~9 PW (≈8× the
+                               # ~1.15 PW target) and over-cooled the whole basin by ~5°C.
     T_surf_ref = 22.0      # cool extratropical surface (°C)
     T_deep_ref = 3.5       # deep reference (matches initial deep T → no deep nudging)
     z_ref      = -150.0    # reference thermocline depth (m)
