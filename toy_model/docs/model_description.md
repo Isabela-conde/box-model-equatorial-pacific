@@ -88,24 +88,28 @@ described in §5.
 ## 3. Surface momentum forcing — trade winds
 
 The wind is a constant easterly trade-wind stress with a realistic meridional
-structure, ramped on over the first 10 days. A 10 m wind speed profile is built
-from off-equatorial maxima at $\pm\varphi_j$ plus an equatorial enhancement:
+structure, ramped on over the first 10 days. The 10 m easterly wind interpolates
+between a weak equatorial value $u_{10}^{\rm eq}$ (the doldrums minimum) and a
+stronger trade maximum $u_{10}^{t}$ at the subtropical latitudes $\pm\varphi_j$:
 
 $$
-u_{10}(y) = \frac{u_{10}^{t}}{1.858}\,
-\Big[\max\!\big(e^{-((\varphi-\varphi_j)/\Delta\varphi)^2},\,
-e^{-((\varphi+\varphi_j)/\Delta\varphi)^2}\big)
-+ 0.9\,e^{-(\varphi/8)^2}\Big],
+u_{10}(y) = u_{10}^{\rm eq} + \big(u_{10}^{t} - u_{10}^{\rm eq}\big)\,
+\max\!\big(e^{-((\varphi-\varphi_j)/\Delta\varphi)^2},\,
+e^{-((\varphi+\varphi_j)/\Delta\varphi)^2}\big),
 $$
 
-where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees. The profile is
-**not** tapered to zero at the meridional walls: a zonal stress is *tangential*
-to those walls (not a singularity), and the velocity sponge (§5.1) absorbs any
-edge flow. Forcing the wind to zero there (an earlier `cos²` taper) imposed a
-sharp $\partial\tau_x/\partial y$ — a spurious wind-stress curl — that drove
-unphysical eastward subtropical flow near $\pm$10°. The normalization (1.858)
-keeps the peak wind at $\approx$7 m s⁻¹; the residual at the wall is
-$\approx$0.9 m s⁻¹, tangential and sponge-damped.
+where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees. The wind is
+weakest at the equator ($\approx$5 m s⁻¹, the doldrums) and strengthens to a
+broad trade maximum ($\approx$8 m s⁻¹) at $\pm\varphi_j = \pm8°$, staying strong
+out to $\pm$10° — the observed tropical surface-zonal-wind shape (weak easterlies
+at the equator, stronger trades off-equator). It is **not** tapered to zero at
+the walls: a zonal stress is *tangential* to those walls (not a singularity), the
+velocity sponge (§5.1) absorbs any edge flow, and forcing it to zero would impose
+a spurious wind-stress curl that drives unphysical eastward subtropical flow.
+
+| $u_{10}^{\rm eq}$ | $u_{10}^{t}$ | $\varphi_j$ | $\Delta\varphi$ |
+|---|---|---|---|
+| 5 m s⁻¹ | 8 m s⁻¹ | 8° | 5° |
 
 The stress is applied using Large & Yeager bulk formula with feed back from ocean surface currents. The atmospheric wind in an eastward-positive frame
 ($\mathbf{U}_a = (-u_{10},\,0)$ for easterly trades) and the ocean surface

@@ -278,14 +278,16 @@ function build_model()
     #### Wind boundary condition ####
     ################################################
 
-    u₁₀_trades  = 8
-    jet_lat     = 5.0
-    jet_width   = 2.5
+    u₁₀_equator = 5.0    # easterly wind speed at the equator (doldrums minimum)
+    u₁₀_trades  = 8.0    # easterly maximum at the trade latitudes ±jet_lat
+    jet_lat     = 8.0    # trade maximum at ±8° (broad belt), equatorial dip retained
+    jet_width   = 5.0    # broad enough that the trades stay strong out to ±10°
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days
 
     τx_parameters = (;
+        u₁₀_equator,
         u₁₀_trades,
         jet_lat,
         jet_width,

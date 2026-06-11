@@ -32,7 +32,7 @@ grid,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 500days)
+          stop_time = 300days)
 
 
 
@@ -84,13 +84,13 @@ plot_equatorial_band_cross_section(filepath,
 plot_ymean_last100(filepath, output_dir; window_days = 100, depth_max = 500.0)
 
 # Equatorial-band (|y| ≤ 250 km) cross sections:
-plot_ymean_last100(filepath, output_dir; window_days = 100, depth_max = 500.0, y_band = 250e3)
+plot_ymean_last100(filepath, output_dir; window_days = 50, depth_max = 500.0, y_band = 250e3)
 
 # Meridional sections (latitude on the horizontal axis) at two classic EUC
 # longitudes — 140°W and 110°W (idealised basin assumed to span 120°E→80°W):
-plot_meridional_last100(filepath, output_dir; window_days = 100, depth_max = 400.0,
+plot_meridional_last100(filepath, output_dir; window_days = 50, depth_max = 400.0,
                         xloc = pacific_lon_to_x(-140.0), label = "≈140°W", tag = "140W")
-plot_meridional_last100(filepath, output_dir; window_days = 100, depth_max = 400.0,
+plot_meridional_last100(filepath, output_dir; window_days = 50, depth_max = 400.0,
                         xloc = pacific_lon_to_x(-110.0), label = "≈110°W", tag = "110W")
 
 # Surface fields (last-100-day mean):

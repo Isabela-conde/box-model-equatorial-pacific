@@ -36,20 +36,18 @@ ax[1].set_title("Upper 400 m (≈9.5 m uniform)"); ax[1].grid(alpha=.3)
 save(fig, "01_vertical_grid.png")
 
 # ================= 2. wind stress =================
-u10_trades, jet_lat, jet_width, cD, rhoa = 8.0, 5.0, 2.5, 2e-3, 1.2
-y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg; lat_edge = (Ly/2)/deg
-npk = np.exp(-((lat-jet_lat)/jet_width)**2)
-spk = np.exp(-((lat+jet_lat)/jet_width)**2)
-peak = np.maximum(npk, spk); eqs = np.exp(-(lat/8.0)**2)
-shape = (peak + 0.9*eqs)/1.858   # no edge taper; renormalised so peak u10 unchanged
-u10 = u10_trades*shape
-tau_kin = rhoa/rho0*cD*u10*np.abs(u10)     # m^2 s^-2
-tau_Nm2 = tau_kin*rho0                       # N m^-2
+u10_eq, u10_trades, jet_lat, jet_width, cD, rhoa = 5.0, 8.0, 8.0, 5.0, 2e-3, 1.2
+y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg
+ts = np.maximum(np.exp(-((lat-jet_lat)/jet_width)**2), np.exp(-((lat+jet_lat)/jet_width)**2))
+speed = u10_eq + (u10_trades - u10_eq)*ts   # trade-wind SPEED (model returns this magnitude)
+u10   = -speed                               # easterly trades → NEGATIVE zonal wind
+tau_x = -rhoa*cD*speed**2                     # physical eastward stress → NEGATIVE (westward)
 fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
-ax[0].plot(u10, lat); ax[0].set_xlabel(r"$u_{10}$ (m s$^{-1}$)"); ax[0].set_ylabel("latitude (°)")
-ax[0].set_title("10 m wind speed profile"); ax[0].grid(alpha=.3); ax[0].axhline(0, color="k", lw=.5)
-ax[1].plot(tau_Nm2, lat, color="C3"); ax[1].set_xlabel(r"$\tau_x$ (N m$^{-2}$)")
-ax[1].set_title("Zonal wind stress (trade winds)"); ax[1].grid(alpha=.3); ax[1].axhline(0, color="k", lw=.5)
+ax[0].plot(u10, lat); ax[0].set_xlabel(r"zonal wind $u_{10}$ (m s$^{-1}$)   [$-$ = easterly]")
+ax[0].set_ylabel("latitude (°)"); ax[0].set_title("Surface zonal wind (easterly trades)")
+ax[0].grid(alpha=.3); ax[0].axvline(0, color="k", lw=.5)
+ax[1].plot(tau_x, lat, color="C3"); ax[1].set_xlabel(r"wind stress $\tau_x$ (N m$^{-2}$)   [$-$ = westward]")
+ax[1].set_title("Zonal wind stress"); ax[1].grid(alpha=.3); ax[1].axvline(0, color="k", lw=.5)
 for a in ax: a.axhline(jet_lat, color="gray", ls=":"); a.axhline(-jet_lat, color="gray", ls=":")
 save(fig, "02_wind_stress.png")
 
