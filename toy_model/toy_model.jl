@@ -166,6 +166,43 @@ end
     -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
 
 ################################################
+#### East/West boundary tracer sponge ####
+################################################
+# The velocity sponge damps u,v near the E/W walls but the tracers were left
+# unconstrained, so the closed eastern corner accumulated cold/salty upwelled
+# water that could not ventilate horizontally and convected to ~450 m.  This
+# relaxes T,S toward a stably-stratified reference within the E/W sponge bands so
+# the boundary columns can't run away.  The reference SST follows the local
+# target T_target(x) (so the cold tongue / warm pool is preserved), with a stable
+# thermocline below; S follows a simple halocline.
+
+# E/W-only mask (1 at the east & west walls, 0 in the interior).
+@inline function ew_mask(x, p)
+    west = max(0, (p.sponge_width_x - x) / p.sponge_width_x)
+    east = max(0, (x - (p.Lx - p.sponge_width_x)) / p.sponge_width_x)
+    return max(west^2, east^2)
+end
+
+# Stratified T reference: local target SST at the surface → T_deep_bdry below.
+@inline function T_boundary_ref(x, z, p)
+    Tsurf = T_target_profile(x, p)
+    return p.T_deep_bdry + (Tsurf - p.T_deep_bdry) *
+           0.5 * (1 + tanh((z - p.z_thermo_bdry) / p.δ_thermo_bdry))
+end
+
+# Simple halocline S reference: surface S_surf_bdry → deep S_deep_bdry.
+@inline function S_boundary_ref(z, p)
+    return p.S_deep_bdry + (p.S_surf_bdry - p.S_deep_bdry) *
+           0.5 * (1 + tanh((z - p.z_halo_bdry) / p.δ_halo_bdry))
+end
+
+@inline sponge_T_ew(x, y, z, t, T, p) = -p.λ_ew * ew_mask(x, p) * (T - T_boundary_ref(x, z, p))
+@inline sponge_S_ew(x, y, z, t, S, p) = -p.λ_ew * ew_mask(x, p) * (S - S_boundary_ref(z, p))
+
+# Combined T forcing: poleward N/S heat sink + E/W boundary relaxation.
+@inline forcing_T(x, y, z, t, T, p) = sink_T(x, y, z, t, T, p) + sponge_T_ew(x, y, z, t, T, p)
+
+################################################
 #### Salinity boundary condition ####
 ################################################
 
@@ -179,7 +216,7 @@ end
 #### Build model ####
 ################################################
 
-function build_model()
+function build_model(; relative_wind = true)
 
     Nx = 140
     Ny = 40
@@ -298,21 +335,27 @@ function build_model()
         spinup_time
     )
 
-    # Relative-wind (current-feedback) stress: both components depend on the surface
-    # (u, v).  τy_relative opposes the ocean's own v (eddy damping) — v now carries a
-    # top stress where the resting-ocean formulation gave it none.  At rest this
-    # reduces exactly to τx_profile, so it's a clean add-on over the sink-fixed base.
-    u_bcs = FieldBoundaryConditions(
-        top    = FluxBoundaryCondition(τx_relative, field_dependencies = (:u, :v),
-                                       parameters = τx_parameters),
-        bottom = FluxBoundaryCondition(0)
-    )
-
-    v_bcs = FieldBoundaryConditions(
-        top    = FluxBoundaryCondition(τy_relative, field_dependencies = (:u, :v),
-                                       parameters = τx_parameters),
-        bottom = FluxBoundaryCondition(0)
-    )
+    # Wind stress.  Toggle with the `relative_wind` keyword to build_model:
+    #   relative_wind = true  → current-feedback stress (τ depends on surface u,v;
+    #                           τy opposes the ocean's own v — eddy damping)
+    #   relative_wind = false → resting-ocean stress (τx_profile only; v has no
+    #                           top stress).  At rest the two are identical.
+    if relative_wind
+        u_bcs = FieldBoundaryConditions(
+            top    = FluxBoundaryCondition(τx_relative, field_dependencies = (:u, :v),
+                                           parameters = τx_parameters),
+            bottom = FluxBoundaryCondition(0))
+        v_bcs = FieldBoundaryConditions(
+            top    = FluxBoundaryCondition(τy_relative, field_dependencies = (:u, :v),
+                                           parameters = τx_parameters),
+            bottom = FluxBoundaryCondition(0))
+    else
+        u_bcs = FieldBoundaryConditions(
+            top    = FluxBoundaryCondition(τx_profile, parameters = τx_parameters),
+            bottom = FluxBoundaryCondition(0))
+        v_bcs = FieldBoundaryConditions(
+            bottom = FluxBoundaryCondition(0))
+    end
 
     ################################################
     #### Sponge forcing ####
@@ -368,7 +411,26 @@ function build_model()
         d_ref
     )
 
-    T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
+    # E/W boundary tracer sponge: relax T,S toward a stably-stratified reference in
+    # the E/W bands so the closed corners can't convect away.  λ_ew sets the rate.
+    λ_ew          = 1 / 10days
+    T_deep_bdry   = 3.5      # deep T the reference relaxes toward
+    z_thermo_bdry = -120.0   # reference thermocline depth
+    δ_thermo_bdry = 70.0     # reference thermocline thickness
+    S_surf_bdry   = 34.6
+    S_deep_bdry   = 34.9
+    z_halo_bdry   = -120.0
+    δ_halo_bdry   = 80.0
+
+    # T forcing = poleward sink + E/W sponge (combined into one function); its
+    # parameters are the union of both their parameter sets (no name clashes).
+    T_params  = merge(sink_params, (; λ_ew, sponge_width_x, Lx, T_warm, T_cold, x_front,
+                                      front_width, T_deep_bdry, z_thermo_bdry, δ_thermo_bdry))
+    T_forcing = Forcing(forcing_T; field_dependencies = :T, parameters = T_params)
+
+    ew_S_params  = (; λ_ew, sponge_width_x, Lx,
+                      S_surf_bdry, S_deep_bdry, z_halo_bdry, δ_halo_bdry)
+    S_ew_forcing = Forcing(sponge_S_ew; field_dependencies = :S, parameters = ew_S_params)
 
     ################################################
     #### Model ####
@@ -422,7 +484,8 @@ function build_model()
         # stays sharp.  (Needs grid halo ≥ 4 — set above.)
         tracer_advection    = WENO(order = 7),
         boundary_conditions = (u = u_bcs, v = v_bcs, T = T_bcs, S = S_bcs),
-        forcing             = (u = u_forcing, v = v_forcing, T = T_forcing)
+        forcing             = (u = u_forcing, v = v_forcing,
+                               T = T_forcing, S = S_ew_forcing)
     )
 
     ################################################
@@ -473,10 +536,11 @@ end
 function run_model(output_dir;
                    filename                 = "toy_model_test_equ_3d",
                    stop_time                = 5days,
+                   relative_wind            = true,
                    plot_boundary_conditions = false,
                    plot_initial_conditions  = false)
 
-    model, grid, τx_parameters = build_model()
+    model, grid, τx_parameters = build_model(; relative_wind = relative_wind)
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)

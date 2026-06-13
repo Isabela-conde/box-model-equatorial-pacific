@@ -26,13 +26,17 @@ cp(joinpath(script_dir, "toy_model.jl"),
 #    force = true)
 
 
+# relative_wind = true  → current-feedback (relative-wind) stress
+# relative_wind = false → resting-ocean stress
+# (set to false for now to isolate whether the relative wind is killing the SEC)
 model,
 grid,
 τx_parameters,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 300days)
+          stop_time = 300days,
+          relative_wind = false)
 
 
 
@@ -102,22 +106,6 @@ plot_surface_last100(filepath, output_dir; window_days = 100)
 plot_surface_heat_budget(filepath, output_dir)
 
 
-# Ly = grid.Ly
-
-# τx_parameters = (;
-#     u₁₀_trades = -10.0,
-#     jet_width = 2.5,
-#     jet_lat = 6.0,
-#     Ly = grid.Ly,
-#     ρₐ = 1.225,
-#     ρₒ = 1025.0,
-#     cᴰ = 1.3e-3,
-# )
-
-
-# plot_surface_wind_boundary(grid,
-#                            τx_parameters,
-#                            output_dir)
 
 println("Finished run.")
 println("Outputs saved in: ", output_dir)

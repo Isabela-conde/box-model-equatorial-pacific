@@ -13,13 +13,22 @@ function plot_surface_wind_profile(grid, τx_parameters, output_dir)
     ys = range(-Ly/2, Ly/2, length = 300)
     lats = ys ./ 111e3
 
-    u10s = [surface_u10_profile(y, τx_parameters) for y in ys]
-    τxs  = [τx_profile(0, y, 0, τx_parameters) for y in ys]
+    # BUG FIX: evaluate the stress PAST the spin-up ramp.  τx_profile multiplies by
+    # spinup_ramp(t) = min(1, t/spinup_time), which is 0 at t=0 — so the old
+    # `τx_profile(0, y, 0, …)` zeroed the whole flux (a flat line at 0).
+    t_eval = τx_parameters.spinup_time
+
+    # Easterly trades plotted as NEGATIVE (the eastward wind/stress component is
+    # westward).  surface_u10_profile returns a positive speed, so negate it; the
+    # Oceananigans top-flux is +ve for westward forcing, so negate it too to show
+    # the physical (westward) wind stress.
+    u10s = [-surface_u10_profile(y, τx_parameters)        for y in ys]
+    τxs  = [-τx_profile(0, y, t_eval, τx_parameters)      for y in ys]
 
     fig = Figure(size = (700, 400))
 
     ax1 = Axis(fig[1, 1],
-               xlabel = "Surface zonal wind, u₁₀ (m s⁻¹)",
+               xlabel = "Surface zonal wind, u₁₀ (m s⁻¹)  [− = easterly]",
                ylabel = "Latitude",
                title = "Idealised surface zonal wind")
 
@@ -27,9 +36,9 @@ function plot_surface_wind_profile(grid, τx_parameters, output_dir)
     vlines!(ax1, 0, color = :gray, linestyle = :dash)
 
     ax2 = Axis(fig[1, 2],
-               xlabel = "Surface stress, τx (m² s⁻²)",
+               xlabel = "Wind stress, τx (m² s⁻²)  [− = westward]",
                ylabel = "Latitude",
-               title = "Applied Oceananigans flux")
+               title = "Applied wind stress (easterly trades)")
 
     lines!(ax2, τxs, lats, linewidth = 3)
     vlines!(ax2, 0, color = :gray, linestyle = :dash)
