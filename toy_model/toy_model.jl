@@ -103,7 +103,7 @@ end
     return p.E_base + p.E_warm * warm
 end
 
-# Surface heat flux = SST restoring + evaporative (latent) cooling.
+# Surface heat flux = SST restoring + evaporative (latent) cooling + solar.
 # Oceananigans convention: +ve flux = heat OUT.  Latent cooling is +ve (heat
 # leaves the ocean as the warm pool evaporates), so it cools the surface.
 @inline function surface_T_flux_bc(x, y, t, T, p)
@@ -166,43 +166,6 @@ end
     -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
 
 ################################################
-#### East/West boundary tracer sponge ####
-################################################
-# The velocity sponge damps u,v near the E/W walls but the tracers were left
-# unconstrained, so the closed eastern corner accumulated cold/salty upwelled
-# water that could not ventilate horizontally and convected to ~450 m.  This
-# relaxes T,S toward a stably-stratified reference within the E/W sponge bands so
-# the boundary columns can't run away.  The reference SST follows the local
-# target T_target(x) (so the cold tongue / warm pool is preserved), with a stable
-# thermocline below; S follows a simple halocline.
-
-# E/W-only mask (1 at the east & west walls, 0 in the interior).
-@inline function ew_mask(x, p)
-    west = max(0, (p.sponge_width_x - x) / p.sponge_width_x)
-    east = max(0, (x - (p.Lx - p.sponge_width_x)) / p.sponge_width_x)
-    return max(west^2, east^2)
-end
-
-# Stratified T reference: local target SST at the surface → T_deep_bdry below.
-@inline function T_boundary_ref(x, z, p)
-    Tsurf = T_target_profile(x, p)
-    return p.T_deep_bdry + (Tsurf - p.T_deep_bdry) *
-           0.5 * (1 + tanh((z - p.z_thermo_bdry) / p.δ_thermo_bdry))
-end
-
-# Simple halocline S reference: surface S_surf_bdry → deep S_deep_bdry.
-@inline function S_boundary_ref(z, p)
-    return p.S_deep_bdry + (p.S_surf_bdry - p.S_deep_bdry) *
-           0.5 * (1 + tanh((z - p.z_halo_bdry) / p.δ_halo_bdry))
-end
-
-@inline sponge_T_ew(x, y, z, t, T, p) = -p.λ_ew * ew_mask(x, p) * (T - T_boundary_ref(x, z, p))
-@inline sponge_S_ew(x, y, z, t, S, p) = -p.λ_ew * ew_mask(x, p) * (S - S_boundary_ref(z, p))
-
-# Combined T forcing: poleward N/S heat sink + E/W boundary relaxation.
-@inline forcing_T(x, y, z, t, T, p) = sink_T(x, y, z, t, T, p) + sponge_T_ew(x, y, z, t, T, p)
-
-################################################
 #### Salinity boundary condition ####
 ################################################
 
@@ -253,12 +216,11 @@ function build_model(; relative_wind = true)
     cᴾ  = 3991
 
     # SST-restoring piston velocity.  λ_T [m s⁻¹] = (λ in W m⁻² K⁻¹)/(ρₒ cᴾ).
-    # λ_T = 7e-6 ≈ 29 W m⁻² K⁻¹ (a realistic air-sea damping) → restoring timescale
-    # over a 50 m layer ≈ 83 days.  WEAKENED from 2e-5 (≈80 W m⁻² K⁻¹, a stiff
-    # thermostat) so the ocean dynamics + evaporative cooling actually shape SST
-    # instead of being overruled by the restoring.  Target SST is zonally
-    # structured: warm pool (T_warm) west, cold tongue (T_cold) east, front at x_front.
-    λ_T         = 7e-6
+    # λ_T = 2e-5 ≈ 80 W m⁻² K⁻¹ → restoring timescale over a 50 m layer ≈ 29 days.
+    # Restored to checkpoint_2's strong value: weak λ_T let the cold tongue crash
+    # (→ eastern convection) and the warm pool drift (→ flat thermocline).  Target
+    # SST is zonally structured: warm pool (T_warm) west, cold tongue (T_cold) east.
+    λ_T         = 2e-5
     T_warm      = 29.5     # western warm-pool target
     T_cold      = 24.0     # eastern cold-tongue target
     x_front     = 0.6      # front location as fraction of basin width (W→E)
@@ -275,8 +237,7 @@ function build_model(; relative_wind = true)
 
     # Constant solar heat input (heat IN), set to roughly balance the area-mean
     # evaporative cooling (~70 W m⁻²) so the net surface heat budget ≈ 0 and SST
-    # stays near target.  The restoring + N/S fluxes then handle the spatial
-    # redistribution.  Tune Q_solar_Wm2 against the surface_heat_budget diagnostic.
+    # stays near target.  Tune Q_solar_Wm2 against the surface_heat_budget diagnostic.
     Q_solar_Wm2 = 70.0
     Q_solar     = Q_solar_Wm2 / (ρₒ * cᴾ)  # kinematic (°C m s⁻¹)
 
@@ -315,7 +276,8 @@ function build_model(; relative_wind = true)
     #### Wind boundary condition ####
     ################################################
 
-    u₁₀_equator = 5.0    # easterly wind speed at the equator (doldrums minimum)
+    u₁₀_equator = 6.0    # easterly wind speed at the equator (≈ checkpoint_2's 6.1 m/s,
+                         # strong enough to drive a proper westward SEC)
     u₁₀_trades  = 8.0    # easterly maximum at the trade latitudes ±jet_lat
     jet_lat     = 8.0    # trade maximum at ±8° (broad belt), equatorial dip retained
     jet_width   = 5.0    # broad enough that the trades stay strong out to ±10°
@@ -392,10 +354,7 @@ function build_model(; relative_wind = true)
 
     # Poleward heat sink: relax T toward a cool extratropical profile in the N/S
     # bands so the net tropical heat uptake is exported and the basin equilibrates.
-    # λ_T_sink sets the sink timescale; T_surf_ref the cool subtropical surface.
-    # Tune against the surface_heat_budget diagnostic (dHC/dt should → 0).
-    λ_T_sink   = 1 / 150days   # weakened from 1/20days — that removed ~9 PW (≈8× the
-                               # ~1.15 PW target) and over-cooled the whole basin by ~5°C.
+    λ_T_sink   = 1 / 150days
     T_surf_ref = 22.0      # cool extratropical surface (°C)
     T_deep_ref = 3.5       # deep reference (matches initial deep T → no deep nudging)
     z_ref      = -150.0    # reference thermocline depth (m)
@@ -411,26 +370,7 @@ function build_model(; relative_wind = true)
         d_ref
     )
 
-    # E/W boundary tracer sponge: relax T,S toward a stably-stratified reference in
-    # the E/W bands so the closed corners can't convect away.  λ_ew sets the rate.
-    λ_ew          = 1 / 10days
-    T_deep_bdry   = 3.5      # deep T the reference relaxes toward
-    z_thermo_bdry = -120.0   # reference thermocline depth
-    δ_thermo_bdry = 70.0     # reference thermocline thickness
-    S_surf_bdry   = 34.6
-    S_deep_bdry   = 34.9
-    z_halo_bdry   = -120.0
-    δ_halo_bdry   = 80.0
-
-    # T forcing = poleward sink + E/W sponge (combined into one function); its
-    # parameters are the union of both their parameter sets (no name clashes).
-    T_params  = merge(sink_params, (; λ_ew, sponge_width_x, Lx, T_warm, T_cold, x_front,
-                                      front_width, T_deep_bdry, z_thermo_bdry, δ_thermo_bdry))
-    T_forcing = Forcing(forcing_T; field_dependencies = :T, parameters = T_params)
-
-    ew_S_params  = (; λ_ew, sponge_width_x, Lx,
-                      S_surf_bdry, S_deep_bdry, z_halo_bdry, δ_halo_bdry)
-    S_ew_forcing = Forcing(sponge_S_ew; field_dependencies = :S, parameters = ew_S_params)
+    T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
 
     ################################################
     #### Model ####
@@ -484,8 +424,7 @@ function build_model(; relative_wind = true)
         # stays sharp.  (Needs grid halo ≥ 4 — set above.)
         tracer_advection    = WENO(order = 7),
         boundary_conditions = (u = u_bcs, v = v_bcs, T = T_bcs, S = S_bcs),
-        forcing             = (u = u_forcing, v = v_forcing,
-                               T = T_forcing, S = S_ew_forcing)
+        forcing             = (u = u_forcing, v = v_forcing, T = T_forcing)
     )
 
     ################################################

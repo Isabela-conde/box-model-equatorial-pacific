@@ -35,7 +35,7 @@ grid,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 300days,
+          stop_time = 200days,
           relative_wind = false)
 
 
