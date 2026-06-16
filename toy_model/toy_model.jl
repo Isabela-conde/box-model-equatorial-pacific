@@ -14,12 +14,23 @@ using Oceananigans.TurbulenceClosures
 @inline function surface_u10_profile(y, p)
     lat = y / 111e3
 
-    northern_trade = exp(-((lat - p.jet_lat) / p.jet_width)^2)
-    southern_trade = exp(-((lat + p.jet_lat) / p.jet_width)^2)
+    # Smooth off-equatorial trade-wind bump (no equatorial cusp).  The factor
+    # (lat/jet_lat)² ·exp(1-(lat/jet_lat)²) is an even, C∞ function of latitude
+    # that is exactly 0 at the equator (→ u₁₀_equator), exactly 1 at the trade
+    # latitudes ±jet_lat (→ u₁₀_trades).
+    r           = lat / p.jet_lat
+    trade_shape = r^2 * exp(1 - r^2)
 
-    trade_shape = max(northern_trade, southern_trade)
+    # Edge taper: subtract a smooth, poleward-increasing term so the easterlies
+    # WEAKEN toward the N/S walls and end up BELOW the equatorial value.
+    # (lat/lat_edge)⁴ is ≈0 through the interior (the equator dip and the trade
+    # peak are barely touched) and = 1 at the walls, where u₁₀_wall_drop is removed.
+    # C∞ everywhere, so no kink is introduced.
+    lat_edge   = p.Ly / 2 / 111e3
+    edge_taper = (lat / lat_edge)^4
 
-    return p.u₁₀_equator + (p.u₁₀_trades - p.u₁₀_equator) * trade_shape
+    return p.u₁₀_equator + (p.u₁₀_trades - p.u₁₀_equator) * trade_shape -
+           p.u₁₀_wall_drop * edge_taper
 end
 
 @inline function spinup_ramp(t, p)
@@ -103,15 +114,28 @@ end
     return p.E_base + p.E_warm * warm
 end
 
-# Surface heat flux = SST restoring + evaporative (latent) cooling + solar.
+# Surface heat flux = SST restoring + evaporative (latent) cooling.
 # Oceananigans convention: +ve flux = heat OUT.  Latent cooling is +ve (heat
 # leaves the ocean as the warm pool evaporates), so it cools the surface.
+# NOTE: solar heating is NOT applied here.  A surface flux only heats the TOP
+# grid cell, which built a razor-sharp ~14 m stratification cap that strangled
+# the wind-driven SEC (the EUC filled the whole upper layer).  Solar is instead
+# applied as a depth-distributed BODY forcing (see solar_penetration below), so
+# only the fraction absorbed in each layer warms it — like real shortwave.
 @inline function surface_T_flux_bc(x, y, t, T, p)
     restoring      = p.λ_T * (T - T_target_profile(x, p))
     latent_cooling = p.latent_coeff * evaporation_rate_profile(x, p)
-    solar_heating  = -p.Q_solar          # -ve flux = heat INTO the ocean
-    return restoring + latent_cooling + solar_heating
+    return restoring + latent_cooling
 end
+
+# Penetrating solar heating as a body forcing (°C s⁻¹).  The downward shortwave
+# flux decays as I(z) = Q_solar·exp(z/h_solar) (z ≤ 0); the local heating rate is
+# its convergence ∂I/∂z = (Q_solar/h_solar)·exp(z/h_solar).  Integrated over the
+# column this absorbs exactly Q_solar (the same total heat as the old surface
+# term), but spread over an e-folding depth h_solar instead of the top cell — so
+# the top ~9.5 m cell now gets only ~1-exp(-Δz/h_solar) of it and the mixed layer
+# stays deep enough for the wind to drive a proper SEC.
+@inline solar_penetration(z, p) = (p.Q_solar / p.h_solar) * exp(z / p.h_solar)
 
 ################################################
 #### Boundary sponge — damp u and v only ####
@@ -162,8 +186,13 @@ end
            0.5 * (1 + tanh((z - p.z_ref) / p.d_ref))
 end
 
-@inline sink_T(x, y, z, t, T, p) =
-    -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
+# Combined T body forcing: penetrating solar heating (always on) PLUS the
+# optional poleward sink (scaled by sink_on = 1 when poleward_sink=true, else 0).
+@inline function sink_T(x, y, z, t, T, p)
+    solar = solar_penetration(z, p)
+    sink  = -p.sink_on * p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
+    return solar + sink
+end
 
 ################################################
 #### Salinity boundary condition ####
@@ -179,7 +208,7 @@ end
 #### Build model ####
 ################################################
 
-function build_model(; relative_wind = true)
+function build_model(; relative_wind = true, poleward_sink = true)
 
     Nx = 140
     Ny = 40
@@ -235,14 +264,19 @@ function build_model(; relative_wind = true)
     E_warm       = 3e-8       # warm-pool evaporation enhancement (m s⁻¹)
     latent_coeff = ρ_fw * Lᵥ / (ρₒ * cᴾ)   # E (m/s) → kinematic heat flux (°C m s⁻¹)
 
-    # Constant solar heat input (heat IN), set to roughly balance the area-mean
-    # evaporative cooling (~70 W m⁻²) so the net surface heat budget ≈ 0 and SST
-    # stays near target.  Tune Q_solar_Wm2 against the surface_heat_budget diagnostic.
+    # Solar heat input (heat IN), set to roughly balance the area-mean evaporative
+    # cooling (~70 W m⁻²) so the net surface heat budget ≈ 0 and SST stays near
+    # target.  Applied as a depth-PENETRATING body forcing (solar_penetration),
+    # NOT a surface flux — h_solar is the e-folding penetration depth.  Tune
+    # Q_solar_Wm2 against the surface_heat_budget diagnostic, h_solar against the
+    # surface stratification / mixed-layer depth (bigger h_solar → deeper, gentler
+    # heating → deeper mixed layer → stronger SEC).
     Q_solar_Wm2 = 70.0
     Q_solar     = Q_solar_Wm2 / (ρₒ * cᴾ)  # kinematic (°C m s⁻¹)
+    h_solar     = 25.0                     # solar penetration e-folding depth (m)
 
     surface_T_flux_parameters = (; λ_T, T_warm, T_cold, x_front, front_width, Lx,
-                                   E_base, E_warm, latent_coeff, Q_solar)
+                                   E_base, E_warm, latent_coeff)
 
     surface_T_bc = FluxBoundaryCondition(surface_T_flux_bc,
                                          field_dependencies = :T,
@@ -276,11 +310,13 @@ function build_model(; relative_wind = true)
     #### Wind boundary condition ####
     ################################################
 
-    u₁₀_equator = 6.0    # easterly wind speed at the equator (≈ checkpoint_2's 6.1 m/s,
+    u₁₀_equator = 5.0    # easterly wind speed at the equator (≈ checkpoint_2's 6.1 m/s,
                          # strong enough to drive a proper westward SEC)
-    u₁₀_trades  = 8.0    # easterly maximum at the trade latitudes ±jet_lat
-    jet_lat     = 8.0    # trade maximum at ±8° (broad belt), equatorial dip retained
-    jet_width   = 5.0    # broad enough that the trades stay strong out to ±10°
+    u₁₀_trades  = 6.0    # easterly maximum at the trade latitudes ±jet_lat
+    jet_lat       = 6.0    # trade maximum at ±6° (moved in to reduce the broad ±5-8°
+    jet_width     = 5.0    # easterlies that were over-upwelling the equator)
+    u₁₀_wall_drop = 1.5    # easterly reduction at the N/S walls (→ wall ≈ 4.0 m/s,
+                           # below the equatorial 5.0; raise for weaker walls)
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days
@@ -290,6 +326,7 @@ function build_model(; relative_wind = true)
         u₁₀_trades,
         jet_lat,
         jet_width,
+        u₁₀_wall_drop,
         cᴰ,
         ρₐ,
         ρₒ,
@@ -360,6 +397,10 @@ function build_model(; relative_wind = true)
     z_ref      = -150.0    # reference thermocline depth (m)
     d_ref      = 120.0     # reference thermocline thickness (m)
 
+    # sink_on scales the poleward sink: 1 when poleward_sink=true, 0 when off.
+    # (Solar penetration is always applied, so the T body forcing is always built.)
+    sink_on = poleward_sink ? 1.0 : 0.0
+
     sink_params = (;
         sponge_width_y,
         Ly,
@@ -367,9 +408,13 @@ function build_model(; relative_wind = true)
         T_surf_ref,
         T_deep_ref,
         z_ref,
-        d_ref
+        d_ref,
+        sink_on,
+        Q_solar,
+        h_solar
     )
 
+    # T body forcing = penetrating solar (always) + poleward sink (toggled by sink_on).
     T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
 
     ################################################
@@ -476,10 +521,12 @@ function run_model(output_dir;
                    filename                 = "toy_model_test_equ_3d",
                    stop_time                = 5days,
                    relative_wind            = true,
+                   poleward_sink            = true,
                    plot_boundary_conditions = false,
                    plot_initial_conditions  = false)
 
-    model, grid, τx_parameters = build_model(; relative_wind = relative_wind)
+    model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
+                                               poleward_sink = poleward_sink)
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)

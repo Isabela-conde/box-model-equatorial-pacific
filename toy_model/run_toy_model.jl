@@ -35,8 +35,14 @@ grid,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 200days,
-          relative_wind = false)
+          stop_time = 400days,   # MUST run this long: the EUC/SEC goes through a
+                                 # spin-up OVERSHOOT (~day 100-200 the EUC shoals to
+                                 # ~-25m & the surface nearly flips eastward) and only
+                                 # recovers to a strong westward SEC by ~day 250-300.
+                                 # checkpoint_2 (the good run) did exactly this — short
+                                 # 150-day runs stop mid-overshoot and look broken.
+          relative_wind = false,
+          poleward_sink = false)
 
 
 
@@ -85,16 +91,16 @@ plot_equatorial_band_cross_section(filepath,
 ################################################
 
 # ȳ-mean cross sections (T, b, ∂b/∂z, u) with thermocline overlay:
-plot_ymean_last100(filepath, output_dir; window_days = 100, depth_max = 500.0)
+plot_ymean_last100(filepath, output_dir; window_days = 10, depth_max = 700.0)
 
 # Equatorial-band (|y| ≤ 250 km) cross sections:
-plot_ymean_last100(filepath, output_dir; window_days = 50, depth_max = 500.0, y_band = 250e3)
+plot_ymean_last100(filepath, output_dir; window_days = 10, depth_max = 700.0, y_band = 250e3)
 
 # Meridional sections (latitude on the horizontal axis) at two classic EUC
 # longitudes — 140°W and 110°W (idealised basin assumed to span 120°E→80°W):
-plot_meridional_last100(filepath, output_dir; window_days = 50, depth_max = 400.0,
+plot_meridional_last100(filepath, output_dir; window_days = 10, depth_max = 700.0,
                         xloc = pacific_lon_to_x(-140.0), label = "≈140°W", tag = "140W")
-plot_meridional_last100(filepath, output_dir; window_days = 50, depth_max = 400.0,
+plot_meridional_last100(filepath, output_dir; window_days = 10, depth_max = 700.0,
                         xloc = pacific_lon_to_x(-110.0), label = "≈110°W", tag = "110W")
 
 # Surface fields (last-100-day mean):

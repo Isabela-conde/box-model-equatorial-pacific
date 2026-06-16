@@ -36,16 +36,23 @@ ax[1].set_title("Upper 400 m (≈9.5 m uniform)"); ax[1].grid(alpha=.3)
 save(fig, "01_vertical_grid.png")
 
 # ================= 2. wind stress =================
-u10_eq, u10_trades, jet_lat, jet_width, cD, rhoa = 5.0, 8.0, 8.0, 5.0, 2e-3, 1.2
+# Matches surface_u10_profile in toy_model.jl: smooth off-equatorial trade bump
+# (lat/jet_lat)²·exp(1-(lat/jet_lat)²) minus a (lat/lat_edge)⁴ wall taper, so the
+# easterlies dip at the equator, peak at ±jet_lat, and weaken BELOW the equatorial
+# value at the N/S walls.
+u10_eq, u10_trades, jet_lat, wall_drop, cD, rhoa = 5.0, 6.0, 6.0, 1.5, 2e-3, 1.2
+lat_edge = (Ly/2)/deg
 y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg
-ts = np.maximum(np.exp(-((lat-jet_lat)/jet_width)**2), np.exp(-((lat+jet_lat)/jet_width)**2))
-speed = u10_eq + (u10_trades - u10_eq)*ts   # trade-wind SPEED (model returns this magnitude)
+trade = (lat/jet_lat)**2 * np.exp(1 - (lat/jet_lat)**2)
+edge  = (lat/lat_edge)**4
+speed = u10_eq + (u10_trades - u10_eq)*trade - wall_drop*edge   # trade-wind SPEED
 u10   = -speed                               # easterly trades → NEGATIVE zonal wind
 tau_x = -rhoa*cD*speed**2                     # physical eastward stress → NEGATIVE (westward)
 fig, ax = plt.subplots(1, 2, figsize=(11, 4.2))
 ax[0].plot(u10, lat); ax[0].set_xlabel(r"zonal wind $u_{10}$ (m s$^{-1}$)   [$-$ = easterly]")
 ax[0].set_ylabel("latitude (°)"); ax[0].set_title("Surface zonal wind (easterly trades)")
 ax[0].grid(alpha=.3); ax[0].axvline(0, color="k", lw=.5)
+ax[0].axvline(-u10_eq, color="C1", ls=":", lw=1)   # equator value for reference
 ax[1].plot(tau_x, lat, color="C3"); ax[1].set_xlabel(r"wind stress $\tau_x$ (N m$^{-2}$)   [$-$ = westward]")
 ax[1].set_title("Zonal wind stress"); ax[1].grid(alpha=.3); ax[1].axvline(0, color="k", lw=.5)
 for a in ax: a.axhline(jet_lat, color="gray", ls=":"); a.axhline(-jet_lat, color="gray", ls=":")

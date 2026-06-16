@@ -11,9 +11,9 @@ Pacific:
 3. **little zonal momentum below the EUC**, and
 4. **long-term stability** (a statistically steady state, not a drifting one).
 
-It is driven by a constant trade-wind stress, a surface heat flux, a restoring
-salinity flux, and a small set of body forcings that keep the solution physical
-and bounded.
+It is driven by a constant trade-wind stress, a surface heat flux (restoring +
+evaporative cooling), a restoring salinity flux, penetrating solar heating, and a
+small set of body forcings that keep the solution physical and bounded.
 
 ---
 
@@ -80,60 +80,80 @@ We use a $\beta$-plane approximation, $f = \beta\,y$, with
 $\beta = 2\Omega/R = 2.29\times10^{-11}\ \mathrm{m^{-1}s^{-1}}$
 ($\Omega = 7.29\times10^{-5}\,\mathrm{s^{-1}}$, $R = 6.371\times10^{6}$ m). 
 
-$\mathbf{F}$ and $F_T$ collect the body forcings (sponges, drag, heat sink)
-described in §5.
+$\mathbf{F}$ and $F_T$ collect the body forcings (momentum sponges, deep drag,
+penetrating solar heating, optional poleward heat sink) described in §5.
 
 ---
 
 ## 3. Surface momentum forcing — trade winds
 
 The wind is a constant easterly trade-wind stress with a realistic meridional
-structure, ramped on over the first 10 days. The 10 m easterly wind interpolates
-between a weak equatorial value $u_{10}^{\rm eq}$ (the doldrums minimum) and a
-stronger trade maximum $u_{10}^{t}$ at the subtropical latitudes $\pm\varphi_j$:
+structure, ramped on over the first 10 days. The 10 m easterly wind speed is a
+weak equatorial value $u_{10}^{\rm eq}$ (the doldrums minimum) plus a smooth
+off-equatorial trade bump that peaks at $\pm\varphi_j$, minus an edge taper that
+weakens the easterlies toward the north/south walls:
 
 $$
-u_{10}(y) = u_{10}^{\rm eq} + \big(u_{10}^{t} - u_{10}^{\rm eq}\big)\,
-\max\!\big(e^{-((\varphi-\varphi_j)/\Delta\varphi)^2},\,
-e^{-((\varphi+\varphi_j)/\Delta\varphi)^2}\big),
+u_{10}(y) = u_{10}^{\rm eq}
++ \big(u_{10}^{t} - u_{10}^{\rm eq}\big)\,
+\underbrace{\Big(\tfrac{\varphi}{\varphi_j}\Big)^2 e^{\,1-(\varphi/\varphi_j)^2}}_{\text{trade bump}}
+\;-\;
+u_{10}^{\rm wall}\,
+\underbrace{\Big(\tfrac{\varphi}{\varphi_e}\Big)^4}_{\text{wall taper}},
 $$
 
-where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees. The wind is
-weakest at the equator ($\approx$5 m s⁻¹, the doldrums) and strengthens to a
-broad trade maximum ($\approx$8 m s⁻¹) at $\pm\varphi_j = \pm8°$, staying strong
-out to $\pm$10° — the observed tropical surface-zonal-wind shape (weak easterlies
-at the equator, stronger trades off-equator). It is **not** tapered to zero at
-the walls: a zonal stress is *tangential* to those walls (not a singularity), the
-velocity sponge (§5.1) absorbs any edge flow, and forcing it to zero would impose
-a spurious wind-stress curl that drives unphysical eastward subtropical flow.
+where $\varphi = y/(111\,\mathrm{km})$ is latitude in degrees and
+$\varphi_e = L_y/2/(111\,\mathrm{km}) \approx 10°$ is the wall latitude. The trade
+bump is an even, $C^\infty$ function that is exactly $0$ at the equator (so
+$u_{10} = u_{10}^{\rm eq}$ there) and exactly $1$ at $\pm\varphi_j$ (so the peak
+is $u_{10}^{t}$); it replaces an earlier `max`-of-two-Gaussians form that had a
+non-differentiable **cusp** at the equator. The wall taper $(\varphi/\varphi_e)^4$
+is $\approx0$ through the interior — leaving the equatorial dip and the trade peak
+essentially untouched — and reaches $1$ at the walls, where $u_{10}^{\rm wall}$ is
+removed. The net shape: weakest-but-nonzero easterlies dipping at the equator
+($u_{10}^{\rm eq}=5$ m s⁻¹), a trade maximum ($\approx5.9$ m s⁻¹) near
+$\pm\varphi_j=\pm6°$, and the easterlies tapering to $\approx4$ m s⁻¹ at the walls
+— **below** the equatorial value. The wind is deliberately **not** forced to zero
+at the walls: a zonal stress is *tangential* there (not a singularity), the
+velocity sponge (§5.1) absorbs edge flow, and a hard taper-to-zero would impose a
+spurious wind-stress curl that drives unphysical eastward subtropical flow.
 
-| $u_{10}^{\rm eq}$ | $u_{10}^{t}$ | $\varphi_j$ | $\Delta\varphi$ |
+| $u_{10}^{\rm eq}$ | $u_{10}^{t}$ | $\varphi_j$ | $u_{10}^{\rm wall}$ |
 |---|---|---|---|
-| 5 m s⁻¹ | 8 m s⁻¹ | 8° | 5° |
-
-The stress is applied using Large & Yeager bulk formula with feed back from ocean surface currents. The atmospheric wind in an eastward-positive frame
-($\mathbf{U}_a = (-u_{10},\,0)$ for easterly trades) and the ocean surface
-velocity $\mathbf{u}_o = (u_o, v_o)$,
-
-$$
-\boldsymbol{\tau}(y,t) = \frac{\rho_a}{\rho_0}\,C_D\,
-(\mathbf{U}_a - \mathbf{u}_o)\,\big|\mathbf{U}_a - \mathbf{u}_o\big|\;\cdot\;
-\min\!\Big(1,\frac{t}{\tau_{\rm spin}}\Big),
-\qquad
-\big|\mathbf{U}_a - \mathbf{u}_s\big| = \sqrt{(u_{10}+u_o)^2 + v_o^2}.
-$$
-
-Both stress components are therefore boundary conditions that depend on the
-surface velocity. 
-
-| $u_{10}^{t}$ | $\varphi_j$ | $\Delta\varphi$ | $C_D$ | $\rho_a$ | $\tau_{\rm spin}$ |
-|---|---|---|---|---|---|
-| 8 m s⁻¹ | 5° | 2.5° | $2\times10^{-3}$ | 1.2 kg m⁻³ | 10 days |
+| 5 m s⁻¹ | 6 m s⁻¹ | 6° | 1.5 m s⁻¹ (drop at walls) |
 
 ![Wind stress profile](figures/02_wind_stress.png)
 
-*The figure shows the resting-ocean reference stress (the relative-wind stress at
-$\mathbf{u}_s=0$); the actual applied stress is reduced by the current feedback.*
+*Surface zonal wind (left) and the resulting wind stress (right). The dotted line
+marks the equatorial value; note the trade peak near $\pm6°$ and the walls
+tapering below the equator.*
+
+**Resting-ocean vs. relative-wind stress (a build-time switch).** The stress is a
+bulk formula; the model can apply it two ways, selected by the `relative_wind`
+keyword to `build_model` (and exposed through `run_model`):
+
+- `relative_wind = false` (**resting-ocean / "ocean at rest", the default for the
+  current runs**): the stress uses the wind speed alone,
+  $\tau_x = \tfrac{\rho_a}{\rho_0} C_D\,u_{10}\,|u_{10}|$, with no top stress on
+  $v$.
+- `relative_wind = true` (**current feedback**): the stress uses the wind
+  *relative* to the ocean surface current, with the atmospheric wind in an
+  eastward-positive frame ($\mathbf{U}_a = (-u_{10},\,0)$ for easterly trades) and
+  the ocean surface velocity $\mathbf{u}_o = (u_o, v_o)$,
+  $$
+  \boldsymbol{\tau}(y,t) = \frac{\rho_a}{\rho_0}\,C_D\,
+  (\mathbf{U}_a - \mathbf{u}_o)\,\big|\mathbf{U}_a - \mathbf{u}_o\big|\;\cdot\;
+  \min\!\Big(1,\frac{t}{\tau_{\rm spin}}\Big),
+  $$
+  so both stress components become boundary conditions that depend on the surface
+  velocity (and $\tau_y$ opposes the ocean's own $v$, damping eddies). At rest the
+  two forms are identical.
+
+Both forms are ramped on linearly over $\tau_{\rm spin}=10$ days.
+
+| $C_D$ | $\rho_a$ | $\tau_{\rm spin}$ |
+|---|---|---|
+| $2\times10^{-3}$ | 1.2 kg m⁻³ | 10 days |
 
 (Sign convention: the stress enters as a flux of momentum through the top
 boundary, and Oceananigans' top flux has the opposite sign to the physical
@@ -146,18 +166,22 @@ stress — a positive top $u$-flux removes eastward momentum.)
 
 ### 4.1 Surface heat flux
 
-The top temperature flux combines three physically distinct pieces. In the
-Oceananigans sign convention a positive top flux removes heat:
+The top temperature flux combines two surface pieces. In the Oceananigans sign
+convention a positive top flux removes heat:
 
 $$
 F_T^{\rm top} = \underbrace{\lambda_T\big(T - T_{\rm target}(x)\big)}_{\text{SST restoring}}
-\;+\; \underbrace{\frac{\rho_{\rm fw}L_v}{\rho_0 c_p}\,E(x)}_{\text{latent (evaporative) cooling}}
-\;-\; \underbrace{\frac{Q_{\rm solar}}{\rho_0 c_p}}_{\text{solar heating}} .
+\;+\; \underbrace{\frac{\rho_{\rm fw}L_v}{\rho_0 c_p}\,E(x)}_{\text{latent (evaporative) cooling}} .
 $$
 
-**Restoring** is a *weak* relaxation toward a prescribed SST climatology with
-piston velocity $\lambda_T = 7\times10^{-6}\,\mathrm{m\,s^{-1}}$
-($\approx 29\ \mathrm{W\,m^{-2}\,K^{-1}}$, an air–sea damping timescale of ≈ 83 days
+Solar heating is **not** a surface flux — it is applied as a depth-penetrating
+*body* forcing (§5.3), because a surface flux deposits all the shortwave heat in
+the single top grid cell, building a razor-sharp near-surface stratification that
+caps the wind-mixed layer at $\sim$15 m and strangles the wind-driven SEC.
+
+**Restoring** is a relaxation toward a prescribed SST climatology with
+piston velocity $\lambda_T = 2\times10^{-5}\,\mathrm{m\,s^{-1}}$
+($\approx 82\ \mathrm{W\,m^{-2}\,K^{-1}}$, an air–sea damping timescale of ≈ 29 days
 over a 50 m layer). The sign is a **negative feedback**: when $T>T_{\rm target}$
 the flux is positive and cools. The target is zonally structured to set up the
 warm-pool / cold-tongue contrast,
@@ -168,13 +192,12 @@ T_{\rm target}(x) = T_{\rm cold} + (T_{\rm warm}-T_{\rm cold})\,
 $$
 
 **Latent cooling** represents evaporation, enhanced in the warm pool, and is the
-ocean's main surface heat *sink*. **Solar heating** is a uniform input that
-roughly balances the area-mean evaporative cooling so the net surface budget is
-≈ 0 and the SST stays near target.
+ocean's main surface heat *sink*. It is balanced (in the area mean) by the
+penetrating solar input (§5.3) so the net column heat budget is ≈ 0.
 
-| $\lambda_T$ | $T_{\rm warm}$ | $T_{\rm cold}$ | $x_f$ | $w_f$ | $Q_{\rm solar}$ |
-|---|---|---|---|---|---|
-| $7\times10^{-6}$ m s⁻¹ | 29.5 °C | 24.0 °C | 0.6 | 0.18 | 70 W m⁻² |
+| $\lambda_T$ | $T_{\rm warm}$ | $T_{\rm cold}$ | $x_f$ | $w_f$ |
+|---|---|---|---|---|
+| $2\times10^{-5}$ m s⁻¹ | 29.5 °C | 24.0 °C | 0.6 | 0.18 |
 
 ![Surface thermal forcing](figures/03_surface_thermal_forcing.png)
 
@@ -263,11 +286,43 @@ Warm water carried to the subtropical edges is cooled there, exporting the
 tropical heat uptake so the basin equilibrates. The deep reference matches the
 initial deep temperature (3.5 °C) so the abyss is not nudged.
 
+The sink is a **build-time switch**: the `poleward_sink` keyword to `build_model`
+(threaded through `run_model`) multiplies $F_T^{\rm sink}$ by 1 when on and 0 when
+off. It is currently **off** — with the sink active the basin equilibrates but the
+N/S bands cool the whole column; with it off the basin warms slowly but the
+equatorial structure is cleaner. (The solar penetration of §5.3 is independent of
+this switch and always on.)
+
 | $\lambda_{\rm sink}$ | $T_{\rm surf}^{\rm ref}$ | $T_{\rm deep}^{\rm ref}$ | $z_{\rm ref}$ | $d_{\rm ref}$ |
 |---|---|---|---|---|
-| $1/20$ days | 22 °C | 3.5 °C | −150 m | 120 m |
+| $1/150$ days | 22 °C | 3.5 °C | −150 m | 120 m |
 
 ![Poleward heat sink](figures/06_poleward_heat_sink.png)
+
+### 5.3 Penetrating solar heating
+
+Shortwave heating enters as a body forcing with an exponential penetration profile
+rather than a surface flux. The downward solar flux decays with depth as
+$I(z) = Q_{\rm solar}\,e^{z/h_{\rm solar}}$ ($z\le0$), and the local heating rate
+is its convergence:
+
+$$
+F_T^{\rm solar}(z) = \frac{1}{\rho_0 c_p}\,\frac{\partial I}{\partial z}
+= \frac{Q_{\rm solar}}{\rho_0 c_p\,h_{\rm solar}}\,e^{\,z/h_{\rm solar}}.
+$$
+
+Integrated over the column this absorbs exactly $Q_{\rm solar}$ — the same total
+heat as the old surface term, so the area-mean budget still balances the latent
+cooling — but spread over an $e$-folding depth $h_{\rm solar}$ instead of the top
+cell. The top $\approx$9.5 m cell now receives only $1-e^{-\Delta z/h_{\rm solar}}
+\approx 32\%$ of the shortwave, and the rest warms deeper water, so the wind-mixed
+layer stays deep enough for the trade winds to drive a proper westward SEC.
+Larger $h_{\rm solar}$ → deeper, gentler heating → deeper mixed layer → stronger
+SEC.
+
+| $Q_{\rm solar}$ | $h_{\rm solar}$ |
+|---|---|
+| 70 W m⁻² | 25 m |
 
 ---
 
@@ -343,11 +398,14 @@ every 24 h. Two diagnostic families are computed online:
   upper ocean ($z\ge-300$ m) and the deep ocean ($z<-300$ m), including
   $\int|u|\,\mathrm{d}V$ and $\int u^2\,\mathrm{d}V$ below 300 m. The deep
   integrals flattening near zero confirms the deep ocean is spinning down.
-- **Surface heat budget** (post-processed): the surface flux is reconstructed
-  by mechanism (solar in, restoring in/out, evaporation out) and compared with
-  the actual ocean heat-content tendency $\mathrm{d}/\mathrm{d}t\int\rho c_p T\,\mathrm{d}V$.
-  The tendency approaching zero confirms thermal equilibration; the gap between
-  it and the surface net flux is the poleward export through the heat sink.
+- **Column heat budget** (post-processed): the heating is reconstructed by
+  mechanism (solar in, restoring in/out, evaporation out — note solar now enters
+  as a penetrating body forcing, §5.3, but its column integral is unchanged) and
+  compared with the actual ocean heat-content tendency
+  $\mathrm{d}/\mathrm{d}t\int\rho c_p T\,\mathrm{d}V$. The tendency approaching
+  zero confirms thermal equilibration; when the poleward heat sink (§5.2) is
+  enabled, the gap between the tendency and the surface net flux is the poleward
+  export. With the sink off the basin instead drifts slowly warm.
 
 ---
 
@@ -360,13 +418,29 @@ $\tau_x(t)\propto\min(1,\,t/\tau_{\rm spin})$ with $\tau_{\rm spin}=10$ days,
 and is steady thereafter. Two very different timescales then govern the approach
 to a statistically steady state:
 
-**Dynamical adjustment — fast (weeks to a few months).** Once the winds are up,
-the surface flow and an equatorial wave field (Kelvin and Rossby modes)
-redistribute mass: warm water piles up in the west, the thermocline tilts, and
-the resulting subsurface zonal pressure gradient drives the EUC. A
-first-baroclinic equatorial Kelvin wave crosses the basin in $\sim$70 days, so
-the thermocline tilt and the EUC reach a recognisable, quasi-steady structure
-within roughly the first 1–3 months.
+**Dynamical adjustment — fast (weeks to a few months), but with a large
+overshoot.** Once the winds are up, the surface flow and an equatorial wave field
+(Kelvin and Rossby modes) redistribute mass: warm water piles up in the west, the
+thermocline tilts, and the resulting subsurface zonal pressure gradient drives the
+EUC. A first-baroclinic equatorial Kelvin wave crosses the basin in $\sim$70 days.
+
+Crucially, this adjustment is **not monotonic** — it overshoots. The typical
+equatorial-band trajectory is:
+
+- **Days ~10–60:** the winds drive a strong, correct westward surface SEC
+  ($u_{\rm surf}\approx-1.5\,\mathrm{m\,s^{-1}}$) with a weak, deep EUC.
+- **Days ~100–200:** the zonal pressure gradient builds faster than the basin can
+  equilibrate, so the EUC transiently **shoals to $\sim$25 m and balloons**
+  ($>1\,\mathrm{m\,s^{-1}}$), filling the upper layer with eastward flow and
+  **nearly flipping the surface eastward** — the run *looks broken* here.
+- **Days ~250–350:** the wave field reflects and settles; the EUC sinks back to
+  the thermocline and the westward SEC re-establishes on top.
+
+This overshoot is a genuine feature of the spin-up, **not** a configuration bug:
+the reference run reproduces exactly this trajectory and only looks correct after
+$\sim$day 250. **A run stopped at 150–200 days is caught mid-overshoot and will
+show a shallow eastward "slab" with little or no SEC** — the fix is simply to
+integrate longer, not to change the forcing.
 
 **Thermal adjustment — slow (many months).** The *heat content* equilibrates
 much more slowly, because the surface fluxes (solar, evaporation, restoring) and
@@ -377,9 +451,10 @@ equilibrated when this tendency settles to $\approx 0$. Likewise, the
 deep-momentum diagnostic flattening near zero confirms the deep ocean has spun
 down rather than accumulating zonal momentum.
 
-Because of the slow thermal branch, the model is integrated for **300+ days**,
-and time-mean diagnostics are formed over the **last 100 days** so they
-represent the equilibrated state rather than the spin-up transient.
+Because of both the dynamical overshoot and the slow thermal branch, the model is
+integrated for **≥300–400 days**, and time-mean diagnostics are formed over the
+**last 100 days** so they represent the equilibrated state rather than the
+spin-up transient. Judging the EUC/SEC from an earlier snapshot is misleading.
 
 ---
 
@@ -405,11 +480,12 @@ core ≈ 100–150 m) beneath the westward surface flow (blue), and weak flow be
 |---|---|
 | Grid | $L_x=15{,}000$ km, $L_y=\pm10°$, $L_z=2000$ m; $140\times40\times60$ |
 | Rotation | β-plane, $\beta=2.29\times10^{-11}$ m⁻¹s⁻¹ |
-| Wind | $u_{10}^t=8$ m s⁻¹, peaks at ±5°, $C_D=2\times10^{-3}$, 10-day ramp |
-| Heat flux | $\lambda_T=7\times10^{-6}$ m s⁻¹; $T_{\rm target}$: 29.5→24 °C; $Q_{\rm solar}=70$ W m⁻² |
+| Wind | $u_{10}^{\rm eq}=5$, $u_{10}^t=6$ m s⁻¹ (peak ±6°), wall drop 1.5 m s⁻¹; $C_D=2\times10^{-3}$, 10-day ramp; resting-ocean stress (`relative_wind=false`) |
+| Heat flux | $\lambda_T=2\times10^{-5}$ m s⁻¹; $T_{\rm target}$: 29.5→24 °C (surface restoring + latent only) |
+| Solar | $Q_{\rm solar}=70$ W m⁻², penetrating body forcing, $h_{\rm solar}=25$ m |
 | Evaporation | $E=(1\text{–}4)\times10^{-8}$ m s⁻¹ (warm-pool enhanced) |
 | Salinity | restore $5\times10^{-7}$ m s⁻¹ to 34.6 g kg⁻¹ |
 | Momentum drag | sponge $1/5$ day (walls); deep drag $1/20$ day below 300–550 m |
-| Heat sink | $1/20$ day toward 22 °C in N/S bands |
+| Heat sink | $1/150$ day toward 22 °C in N/S bands (`poleward_sink`, currently **off**) |
 | Closure | convective adjustment ($\kappa_{\rm conv}=1$) + biharmonic $\nu_4=10^{12}$ m⁴s⁻¹ |
 | Advection | WENO-3 momentum, WENO-7 tracers |
