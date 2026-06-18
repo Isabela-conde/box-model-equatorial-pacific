@@ -40,7 +40,7 @@ save(fig, "01_vertical_grid.png")
 # (lat/jet_lat)²·exp(1-(lat/jet_lat)²) minus a (lat/lat_edge)⁴ wall taper, so the
 # easterlies dip at the equator, peak at ±jet_lat, and weaken BELOW the equatorial
 # value at the N/S walls.
-u10_eq, u10_trades, jet_lat, wall_drop, cD, rhoa = 5.0, 6.0, 6.0, 1.5, 2e-3, 1.2
+u10_eq, u10_trades, jet_lat, wall_drop, cD, rhoa = 6.0, 8.0, 6.0, 1.5, 2e-3, 1.2
 lat_edge = (Ly/2)/deg
 y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg
 trade = (lat/jet_lat)**2 * np.exp(1 - (lat/jet_lat)**2)

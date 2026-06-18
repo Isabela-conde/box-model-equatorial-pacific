@@ -111,16 +111,19 @@ non-differentiable **cusp** at the equator. The wall taper $(\varphi/\varphi_e)^
 is $\approx0$ through the interior — leaving the equatorial dip and the trade peak
 essentially untouched — and reaches $1$ at the walls, where $u_{10}^{\rm wall}$ is
 removed. The net shape: weakest-but-nonzero easterlies dipping at the equator
-($u_{10}^{\rm eq}=5$ m s⁻¹), a trade maximum ($\approx5.9$ m s⁻¹) near
-$\pm\varphi_j=\pm6°$, and the easterlies tapering to $\approx4$ m s⁻¹ at the walls
-— **below** the equatorial value. The wind is deliberately **not** forced to zero
+($u_{10}^{\rm eq}=6$ m s⁻¹), a trade maximum ($\approx7.8$ m s⁻¹) near
+$\pm\varphi_j=\pm6°$, and the easterlies tapering to $\approx5.4$ m s⁻¹ at the walls
+— **below** the equatorial value. (The strong equatorial easterly is deliberate:
+it drives the upwelling/mixing that cools the surface below the restoring target
+and deepens the mixed layer; weaker winds left a warm shallow cap that trapped a
+shallow eastward jet and suppressed the SEC.) The wind is deliberately **not** forced to zero
 at the walls: a zonal stress is *tangential* there (not a singularity), the
 velocity sponge (§5.1) absorbs edge flow, and a hard taper-to-zero would impose a
 spurious wind-stress curl that drives unphysical eastward subtropical flow.
 
 | $u_{10}^{\rm eq}$ | $u_{10}^{t}$ | $\varphi_j$ | $u_{10}^{\rm wall}$ |
 |---|---|---|---|
-| 5 m s⁻¹ | 6 m s⁻¹ | 6° | 1.5 m s⁻¹ (drop at walls) |
+| 6 m s⁻¹ | 8 m s⁻¹ | 6° | 1.5 m s⁻¹ (drop at walls) |
 
 ![Wind stress profile](figures/02_wind_stress.png)
 
@@ -480,7 +483,7 @@ core ≈ 100–150 m) beneath the westward surface flow (blue), and weak flow be
 |---|---|
 | Grid | $L_x=15{,}000$ km, $L_y=\pm10°$, $L_z=2000$ m; $140\times40\times60$ |
 | Rotation | β-plane, $\beta=2.29\times10^{-11}$ m⁻¹s⁻¹ |
-| Wind | $u_{10}^{\rm eq}=5$, $u_{10}^t=6$ m s⁻¹ (peak ±6°), wall drop 1.5 m s⁻¹; $C_D=2\times10^{-3}$, 10-day ramp; resting-ocean stress (`relative_wind=false`) |
+| Wind | $u_{10}^{\rm eq}=6$, $u_{10}^t=8$ m s⁻¹ (peak ±6°), wall drop 1.5 m s⁻¹; $C_D=2\times10^{-3}$, 10-day ramp; resting-ocean stress (`relative_wind=false`) |
 | Heat flux | $\lambda_T=2\times10^{-5}$ m s⁻¹; $T_{\rm target}$: 29.5→24 °C (surface restoring + latent only) |
 | Solar | $Q_{\rm solar}=70$ W m⁻², penetrating body forcing, $h_{\rm solar}=25$ m |
 | Evaporation | $E=(1\text{–}4)\times10^{-8}$ m s⁻¹ (warm-pool enhanced) |

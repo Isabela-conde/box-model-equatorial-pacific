@@ -11,26 +11,24 @@ using Oceananigans.TurbulenceClosures
 #### Surface wind boundary condition ####
 ################################################
 
+# checkpoint_2 wind profile (reverted to exactly): off-equatorial trade peaks at
+# ±jet_lat plus a 0.9·equatorial enhancement, all multiplied by a cos² edge taper
+# and normalised by 1.2.  (Note this has a `max`-of-Gaussians cusp at the equator
+# and tapers toward the walls; it is the profile that produced the good run.)
 @inline function surface_u10_profile(y, p)
     lat = y / 111e3
+    lat_edge = p.Ly / 2 / 111e3
 
-    # Smooth off-equatorial trade-wind bump (no equatorial cusp).  The factor
-    # (lat/jet_lat)² ·exp(1-(lat/jet_lat)²) is an even, C∞ function of latitude
-    # that is exactly 0 at the equator (→ u₁₀_equator), exactly 1 at the trade
-    # latitudes ±jet_lat (→ u₁₀_trades).
-    r           = lat / p.jet_lat
-    trade_shape = r^2 * exp(1 - r^2)
+    northern_peak = exp(-((lat - p.jet_lat) / p.jet_width)^2)
+    southern_peak = exp(-((lat + p.jet_lat) / p.jet_width)^2)
+    peak_shape    = max(northern_peak, southern_peak)
+    equator_shape = exp(-(lat / 8.0)^2)
+    shape         = peak_shape + 0.9 * equator_shape
+    edge_taper    = cos(π * lat / (2 * lat_edge))^2
+    shape         = shape * edge_taper
+    shape         = shape / 1.2
 
-    # Edge taper: subtract a smooth, poleward-increasing term so the easterlies
-    # WEAKEN toward the N/S walls and end up BELOW the equatorial value.
-    # (lat/lat_edge)⁴ is ≈0 through the interior (the equator dip and the trade
-    # peak are barely touched) and = 1 at the walls, where u₁₀_wall_drop is removed.
-    # C∞ everywhere, so no kink is introduced.
-    lat_edge   = p.Ly / 2 / 111e3
-    edge_taper = (lat / lat_edge)^4
-
-    return p.u₁₀_equator + (p.u₁₀_trades - p.u₁₀_equator) * trade_shape -
-           p.u₁₀_wall_drop * edge_taper
+    return p.u₁₀_trades * shape
 end
 
 @inline function spinup_ramp(t, p)
@@ -310,23 +308,20 @@ function build_model(; relative_wind = true, poleward_sink = true)
     #### Wind boundary condition ####
     ################################################
 
-    u₁₀_equator = 5.0    # easterly wind speed at the equator (≈ checkpoint_2's 6.1 m/s,
-                         # strong enough to drive a proper westward SEC)
-    u₁₀_trades  = 6.0    # easterly maximum at the trade latitudes ±jet_lat
-    jet_lat       = 6.0    # trade maximum at ±6° (moved in to reduce the broad ±5-8°
-    jet_width     = 5.0    # easterlies that were over-upwelling the equator)
-    u₁₀_wall_drop = 1.5    # easterly reduction at the N/S walls (→ wall ≈ 4.0 m/s,
-                           # below the equatorial 5.0; raise for weaker walls)
+    # checkpoint_2 wind parameters (reverted): trade maximum 8 m s⁻¹ at ±5°, narrow
+    # belt (jet_width 2.5°), plus the 0.9 equatorial enhancement built into the
+    # profile.  u₁₀_equator / u₁₀_wall_drop are no longer used by this profile.
+    u₁₀_trades  = 8.0    # easterly maximum at the trade latitudes ±jet_lat
+    jet_lat     = 5.0    # trade maximum at ±5°
+    jet_width   = 2.5    # narrow trade belt
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days
 
     τx_parameters = (;
-        u₁₀_equator,
         u₁₀_trades,
         jet_lat,
         jet_width,
-        u₁₀_wall_drop,
         cᴰ,
         ρₐ,
         ρₒ,
