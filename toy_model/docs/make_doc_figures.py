@@ -36,10 +36,10 @@ ax[1].set_title("Upper 400 m (≈9.5 m uniform)"); ax[1].grid(alpha=.3)
 save(fig, "01_vertical_grid.png")
 
 # ================= 2. wind stress =================
-# Matches surface_u10_profile in toy_model.jl: smooth off-equatorial trade bump
-# (lat/jet_lat)²·exp(1-(lat/jet_lat)²) minus a (lat/lat_edge)⁴ wall taper, so the
-# easterlies dip at the equator, peak at ±jet_lat, and weaken BELOW the equatorial
-# value at the N/S walls.
+# Matches surface_u10_profile in toy_model.jl (smooth-bump profile): equator dip
+# u10_eq + off-equatorial bump (lat/jet_lat)²·exp(1-(lat/jet_lat)²) up to u10_trades
+# at ±jet_lat, minus a (lat/lat_edge)⁴ wall taper that weakens the easterlies to
+# BELOW the equator value but leaves them NON-ZERO (~5.4 m/s) at the ±10° walls.
 u10_eq, u10_trades, jet_lat, wall_drop, cD, rhoa = 6.0, 8.0, 6.0, 1.5, 2e-3, 1.2
 lat_edge = (Ly/2)/deg
 y = np.linspace(-Ly/2, Ly/2, 400); lat = y/deg
@@ -58,31 +58,29 @@ ax[1].set_title("Zonal wind stress"); ax[1].grid(alpha=.3); ax[1].axvline(0, col
 for a in ax: a.axhline(jet_lat, color="gray", ls=":"); a.axhline(-jet_lat, color="gray", ls=":")
 save(fig, "02_wind_stress.png")
 
-# ================= 3. surface thermal forcing =================
+# ================= 3. surface thermal forcing (pure SST restoring) =================
 x = np.linspace(0, Lx, 400); xn = x/Lx
 x_front, front_width = 0.6, 0.18
 T_warm, T_cold = 29.5, 24.0
 warm = 0.5*(1-np.tanh((xn-x_front)/front_width))
 T_target = T_cold + (T_warm-T_cold)*warm
-E_base, E_warm = 1e-8, 3e-8
-E = E_base + E_warm*warm
-Q_latent = rho_fw*Lv*E       # W m^-2 (heat OUT)
-Q_solar = 70.0
-fig, ax = plt.subplots(3, 1, figsize=(8, 9), sharex=True)
-ax[0].plot(x/1e3, T_target, color="C1"); ax[0].set_ylabel("°C")
-ax[0].set_title(r"SST restoring target $T_{\rm target}(x)$  (warm pool W → cold tongue E)")
-ax[0].grid(alpha=.3)
-ax[1].plot(x/1e3, E*1e3*86400, color="C2"); ax[1].set_ylabel("mm day$^{-1}$")
-ax[1].set_title(r"Evaporation rate $E(x)$ (warm-pool enhanced)"); ax[1].grid(alpha=.3)
-ax[2].plot(x/1e3, -Q_latent, color="seagreen", label="latent (evaporation) OUT")
-ax[2].axhline(Q_solar, color="darkorange", label="solar IN (+70)")
-ax[2].axhline(0, color="k", lw=.6)
-ax[2].set_ylabel("W m$^{-2}$"); ax[2].set_xlabel("x (km, W→E)")
-ax[2].set_title("Surface heat-flux components (into ocean +)"); ax[2].legend(); ax[2].grid(alpha=.3)
+fig, ax = plt.subplots(figsize=(8, 3.5))
+ax.plot(x/1e3, T_target, color="C1"); ax.set_ylabel("°C"); ax.set_xlabel("x (km, W→E)")
+ax.set_title(r"SST restoring target $T_{\rm target}(x)$  (warm pool W → cold tongue E)")
+ax.grid(alpha=.3)
 save(fig, "03_surface_thermal_forcing.png")
 
-# (figure 04 "N/S boundary T flux" removed — those wall fluxes were deleted from
-#  the model; the N/S walls are now insulating. Figure numbers 05–08 kept as-is.)
+# ================= 4. N/S wall heat flux (depth dipole) =================
+zw = np.linspace(-600, 0, 300); depth = -zw; amp = 5e-5
+# x-mean shape (x_shape mean ≈ 1); plot kinematic→°C·m/s scaled to W/m² for readability
+north = amp*( 1.8*np.exp(-(depth/20)**2) - 1.3*np.exp(-((depth-80)/55)**2) + 0.4*np.exp(-((depth-100)/150)**2))
+south = amp*(-1.8*np.exp(-(depth/20)**2) + 1.3*np.exp(-((depth-80)/55)**2) - 0.22*np.exp(-((depth-320)/120)**2) + 0.28*np.exp(-((depth-430)/70)**2))
+fig, ax = plt.subplots(figsize=(6, 5))
+ax.plot(north*rho0*cp, zw, label="north wall"); ax.plot(south*rho0*cp, zw, label="south wall")
+ax.axvline(0, color="k", lw=.6); ax.set_xlabel(r"wall heat flux (W m$^{-2}$, +out)")
+ax.set_ylabel("z (m)"); ax.set_title("N/S wall heat flux (depth dipole)")
+ax.legend(); ax.grid(alpha=.3)
+save(fig, "04_ns_wall_heat_flux.png")
 
 # ================= 5. momentum sponge + deep drag =================
 sw_x, sw_y = 5e5, 5e5

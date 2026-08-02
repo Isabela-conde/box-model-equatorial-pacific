@@ -1010,11 +1010,11 @@ end
 # tendency.  ⚠ PARAMS MUST MATCH THE RUN that produced `filepath`.
 function plot_surface_heat_budget(filepath, output_dir;
         ρₒ = 1026.0, cᴾ = 3991.0,
-        λ_T = 7e-6, T_warm = 29.5, T_cold = 24.0,
-        x_front = 0.6, front_width = 0.18,
-        E_base = 1e-8, E_warm = 3e-8, Lᵥ = 2.5e6, ρ_fw = 1000.0,
-        Q_solar_Wm2 = 70.0)
+        λ_T = 2e-5, T_warm = 29.5, T_cold = 24.0,
+        x_front = 0.6, front_width = 0.18)
 
+    # Surface heat flux is now PURE SST restoring (checkpoint_2 config): no solar,
+    # no latent cooling.  This budget reconstructs the restoring flux only.
     Tts   = FieldTimeSeries(filepath, "T")
     grid  = Tts.grid
     times = Tts.times
@@ -1025,16 +1025,9 @@ function plot_surface_heat_budget(filepath, output_dir;
     dx = xc[2] - xc[1]; dy = yc[2] - yc[1]
     dA = dx * dy
     Lx = Nx * dx
-    area = Nx * dx * Ny * dy
 
-    latent_coeff = ρ_fw * Lᵥ / (ρₒ * cᴾ)
-    warmfrac(x)  = 0.5 * (1 - tanh((x / Lx - x_front) / front_width))
+    warmfrac(x) = 0.5 * (1 - tanh((x / Lx - x_front) / front_width))
     Ttar = [T_cold + (T_warm - T_cold) * warmfrac(x) for x in xc]
-    Evap = [E_base + E_warm * warmfrac(x)            for x in xc]
-
-    Qlat_x    = (ρₒ * cᴾ * latent_coeff) .* Evap
-    latent_PW = -sum(Qlat_x) * Ny * dA / 1e15
-    solar_PW  =  Q_solar_Wm2 * area / 1e15
 
     Nt = length(times)
     restore_in  = zeros(Nt)
@@ -1045,9 +1038,7 @@ function plot_surface_heat_budget(filepath, output_dir;
         restore_in[n]  = sum(max.(q, 0.0)) * dA / 1e15
         restore_out[n] = sum(min.(q, 0.0)) * dA / 1e15
     end
-    latent_out  = fill(latent_PW, Nt)
-    solar_in    = fill(solar_PW, Nt)
-    net_surface = restore_in .+ restore_out .+ latent_out .+ solar_in
+    net_surface = restore_in .+ restore_out
 
     zf = znodes(grid, Face())
     dz = diff(zf)
@@ -1070,11 +1061,9 @@ function plot_surface_heat_budget(filepath, output_dir;
     ax1 = Axis(fig[1, 1]; xlabel = "time (days)",
                ylabel = "surface heat flux (PW, + into ocean)",
                title  = "Surface heat budget by mechanism — into(+) / out(−)")
-    lines!(ax1, days_, solar_in,    color = :darkorange, linewidth = 2, label = "solar IN")
     lines!(ax1, days_, restore_in,  color = :firebrick,  linewidth = 2, label = "restoring IN (cold tongue)")
     lines!(ax1, days_, restore_out, color = :royalblue,  linewidth = 2, label = "restoring OUT")
-    lines!(ax1, days_, latent_out,  color = :seagreen,   linewidth = 2, label = "evaporation OUT")
-    lines!(ax1, days_, net_surface, color = :black,      linewidth = 3, label = "surface NET")
+    lines!(ax1, days_, net_surface, color = :black,      linewidth = 3, label = "surface NET (= restoring)")
     hlines!(ax1, [0.0], color = :gray, linestyle = :dash)
     axislegend(ax1, position = :rb)
 

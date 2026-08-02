@@ -11,24 +11,25 @@ using Oceananigans.TurbulenceClosures
 #### Surface wind boundary condition ####
 ################################################
 
-# checkpoint_2 wind profile (reverted to exactly): off-equatorial trade peaks at
-# ±jet_lat plus a 0.9·equatorial enhancement, all multiplied by a cos² edge taper
-# and normalised by 1.2.  (Note this has a `max`-of-Gaussians cusp at the equator
-# and tapers toward the walls; it is the profile that produced the good run.)
 @inline function surface_u10_profile(y, p)
     lat = y / 111e3
-    lat_edge = p.Ly / 2 / 111e3
 
-    northern_peak = exp(-((lat - p.jet_lat) / p.jet_width)^2)
-    southern_peak = exp(-((lat + p.jet_lat) / p.jet_width)^2)
-    peak_shape    = max(northern_peak, southern_peak)
-    equator_shape = exp(-(lat / 8.0)^2)
-    shape         = peak_shape + 0.9 * equator_shape
-    edge_taper    = cos(π * lat / (2 * lat_edge))^2
-    shape         = shape * edge_taper
-    shape         = shape / 1.2
+    # Smooth off-equatorial trade-wind bump (no equatorial cusp).  The factor
+    # (lat/jet_lat)² ·exp(1-(lat/jet_lat)²) is an even, C∞ function of latitude
+    # that is exactly 0 at the equator (→ u₁₀_equator), exactly 1 at the trade
+    # latitudes ±jet_lat (→ u₁₀_trades).
+    r           = lat / p.jet_lat
+    trade_shape = r^2 * exp(1 - r^2)
 
-    return p.u₁₀_trades * shape
+    # Edge taper: subtract a smooth, poleward-increasing term so the easterlies
+    # WEAKEN toward the N/S walls but stay NON-ZERO there (unlike the checkpoint_2
+    # cos²-to-zero taper).  (lat/lat_edge)⁴ ≈0 through the interior and = 1 at the
+    # walls, where u₁₀_wall_drop is removed.  C∞ everywhere — no kink.
+    lat_edge   = p.Ly / 2 / 111e3
+    edge_taper = (lat / lat_edge)^4
+
+    return p.u₁₀_equator + (p.u₁₀_trades - p.u₁₀_equator) * trade_shape -
+           p.u₁₀_wall_drop * edge_taper
 end
 
 @inline function spinup_ramp(t, p)
@@ -104,36 +105,45 @@ end
     return p.T_cold + (p.T_warm - p.T_cold) * warm_fraction
 end
 
-# Evaporation rate E(x) [m s⁻¹], enhanced in the warm pool (west).  ONE field
-# drives both the latent cooling here and the salinification in Jˢ.
-@inline function evaporation_rate_profile(x, p)
-    xnorm = x / p.Lx
-    warm  = 0.5 * (1 - tanh((xnorm - p.x_front) / p.front_width))  # 1 west → 0 east
-    return p.E_base + p.E_warm * warm
-end
-
-# Surface heat flux = SST restoring + evaporative (latent) cooling.
-# Oceananigans convention: +ve flux = heat OUT.  Latent cooling is +ve (heat
-# leaves the ocean as the warm pool evaporates), so it cools the surface.
-# NOTE: solar heating is NOT applied here.  A surface flux only heats the TOP
-# grid cell, which built a razor-sharp ~14 m stratification cap that strangled
-# the wind-driven SEC (the EUC filled the whole upper layer).  Solar is instead
-# applied as a depth-distributed BODY forcing (see solar_penetration below), so
-# only the fraction absorbed in each layer warms it — like real shortwave.
+# Surface heat flux = SST restoring ONLY (reverted to checkpoint_2's pure-restoring
+# form).  Oceananigans convention: +ve flux = heat OUT, so this is a negative
+# feedback toward the zonally-structured target T_target_profile(x) (warm pool W →
+# cold tongue E).  The latent-cooling and penetrating-solar terms added after
+# checkpoint_2 have been removed.
 @inline function surface_T_flux_bc(x, y, t, T, p)
-    restoring      = p.λ_T * (T - T_target_profile(x, p))
-    latent_cooling = p.latent_coeff * evaporation_rate_profile(x, p)
-    return restoring + latent_cooling
+    return p.λ_T * (T - T_target_profile(x, p))
 end
 
-# Penetrating solar heating as a body forcing (°C s⁻¹).  The downward shortwave
-# flux decays as I(z) = Q_solar·exp(z/h_solar) (z ≤ 0); the local heating rate is
-# its convergence ∂I/∂z = (Q_solar/h_solar)·exp(z/h_solar).  Integrated over the
-# column this absorbs exactly Q_solar (the same total heat as the old surface
-# term), but spread over an e-folding depth h_solar instead of the top cell — so
-# the top ~9.5 m cell now gets only ~1-exp(-Δz/h_solar) of it and the mixed layer
-# stays deep enough for the wind to drive a proper SEC.
-@inline solar_penetration(z, p) = (p.Q_solar / p.h_solar) * exp(z / p.h_solar)
+################################################
+#### North and south wall temperature fluxes ####
+################################################
+# Restored from checkpoint_2: a prescribed depth-dipole heat flux on the N/S walls
+# (hand-tuned from a global-model subtropical mean) that sets the off-equatorial
+# thermal structure feeding the subtropical→equatorial thermocline.  surface_amp
+# scales the whole thing; x_shape gives a weak zonal modulation.
+@inline function north_T_flux(x, z, p)
+    depth = -z
+    xnorm = x / p.Lx
+    x_shape = 1.0 + 0.25 * sin(2π * xnorm) + 0.10 * sin(6π * xnorm + 0.7)
+    surface_positive  =  1.8 * exp(-(depth / 20)^2)
+    shallow_negative  = -1.3 * exp(-((depth - 80) / 55)^2)
+    deeper_positive   =  0.4 * exp(-((depth - 100) / 150)^2)
+    return p.surface_amp * x_shape * (surface_positive + shallow_negative + deeper_positive)
+end
+
+@inline function south_T_flux(x, z, p)
+    depth = -z
+    xnorm = x / p.Lx
+    x_shape = 1.0 + 0.15 * sin(2π * xnorm + 0.5) + 0.05 * sin(6π * xnorm + 1.2)
+    surface_negative        = -1.8 * exp(-(depth / 20)^2)
+    shallow_positive        =  1.3 * exp(-((depth - 80) / 55)^2)
+    shallow_negative        = -0.22 * exp(-((depth - 320) / 120)^2)
+    shallow_positive_deeper =  0.28 * exp(-((depth - 430) / 70)^2)
+    return p.surface_amp * x_shape * (surface_negative + shallow_positive + shallow_negative + shallow_positive_deeper)
+end
+
+@inline north_T_flux_bc(x, z, t, p) = north_T_flux(x, z, p)
+@inline south_T_flux_bc(x, z, t, p) = south_T_flux(x, z, p)
 
 ################################################
 #### Boundary sponge — damp u and v only ####
@@ -184,20 +194,18 @@ end
            0.5 * (1 + tanh((z - p.z_ref) / p.d_ref))
 end
 
-# Combined T body forcing: penetrating solar heating (always on) PLUS the
-# optional poleward sink (scaled by sink_on = 1 when poleward_sink=true, else 0).
-@inline function sink_T(x, y, z, t, T, p)
-    solar = solar_penetration(z, p)
-    sink  = -p.sink_on * p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
-    return solar + sink
-end
+# Poleward heat sink (the only T body forcing): relax T toward a cool extratropical
+# reference in the N/S bands.  Solar penetration was removed with the heat-flux
+# revert.  Attached only when poleward_sink=true (currently off).
+@inline sink_T(x, y, z, t, T, p) =
+    -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
 
 ################################################
 #### Salinity boundary condition ####
 ################################################
 
 @inline function Jˢ(x, y, t, S, p)
-    evaporation_flux = -evaporation_rate_profile(x, p) * S   # -ve → salinity increases
+    evaporation_flux = -p.evaporation_rate * S   # uniform evaporation (checkpoint_2); -ve → S increases
     restoring_flux   = -p.restore_rate * (S - p.S_surface_target)
     return evaporation_flux + restoring_flux
 end
@@ -253,50 +261,32 @@ function build_model(; relative_wind = true, poleward_sink = true)
     x_front     = 0.6      # front location as fraction of basin width (W→E)
     front_width = 0.18     # front sharpness (fraction of Lx)
 
-    # Warm-pool evaporation → latent cooling (a physical heat sink) + salinification.
-    # E(x) = E_base + E_warm·warm_fraction(x).  E_warm = 3e-8 m/s (~2.6 mm/day) gives
-    # ρ_fw Lᵥ E /(ρₒ cᴾ) ≈ 100 W m⁻² of cooling in the warm pool (~25 W m⁻² in the east).
-    Lᵥ           = 2.5e6      # J kg⁻¹, latent heat of vaporisation
-    ρ_fw         = 1000.0     # kg m⁻³, freshwater density
-    E_base       = 1e-8       # background evaporation (m s⁻¹)
-    E_warm       = 3e-8       # warm-pool evaporation enhancement (m s⁻¹)
-    latent_coeff = ρ_fw * Lᵥ / (ρₒ * cᴾ)   # E (m/s) → kinematic heat flux (°C m s⁻¹)
-
-    # Solar heat input (heat IN), set to roughly balance the area-mean evaporative
-    # cooling (~70 W m⁻²) so the net surface heat budget ≈ 0 and SST stays near
-    # target.  Applied as a depth-PENETRATING body forcing (solar_penetration),
-    # NOT a surface flux — h_solar is the e-folding penetration depth.  Tune
-    # Q_solar_Wm2 against the surface_heat_budget diagnostic, h_solar against the
-    # surface stratification / mixed-layer depth (bigger h_solar → deeper, gentler
-    # heating → deeper mixed layer → stronger SEC).
-    Q_solar_Wm2 = 70.0
-    Q_solar     = Q_solar_Wm2 / (ρₒ * cᴾ)  # kinematic (°C m s⁻¹)
-    h_solar     = 25.0                     # solar penetration e-folding depth (m)
-
-    surface_T_flux_parameters = (; λ_T, T_warm, T_cold, x_front, front_width, Lx,
-                                   E_base, E_warm, latent_coeff)
+    surface_T_flux_parameters = (; λ_T, T_warm, T_cold, x_front, front_width, Lx)
 
     surface_T_bc = FluxBoundaryCondition(surface_T_flux_bc,
                                          field_dependencies = :T,
                                          parameters         = surface_T_flux_parameters)
 
+    # N/S wall heat-flux params (restored from checkpoint_2).
+    north_T_flux_parameters = (; Lx, surface_amp = 5e-5)
+    south_T_flux_parameters = (; Lx, surface_amp = 5e-5)
+
     T_bcs = FieldBoundaryConditions(
         top    = surface_T_bc,
-        bottom = FluxBoundaryCondition(0)
-        # north & south default to zero flux (insulating walls)
+        bottom = FluxBoundaryCondition(0),
+        north  = FluxBoundaryCondition(north_T_flux_bc, parameters = north_T_flux_parameters),
+        south  = FluxBoundaryCondition(south_T_flux_bc, parameters = south_T_flux_parameters)
     )
 
     ################################################
     #### Salinity boundary conditions ####
     ################################################
 
+    evaporation_rate = 1e-8     # uniform evaporation (checkpoint_2)
     restore_rate     = 5e-7
     S_surface_target = 34.6
 
-    # Evaporation (E_base, E_warm, front shape) is SHARED with the heat flux, so the
-    # same warm-pool evaporation that cools the surface also makes it saltier.
-    salinity_flux_parameters = (; restore_rate, S_surface_target,
-                                  E_base, E_warm, x_front, front_width, Lx)
+    salinity_flux_parameters = (; evaporation_rate, restore_rate, S_surface_target)
 
     evaporation_bc = FluxBoundaryCondition(Jˢ,
                                            field_dependencies = :S,
@@ -308,20 +298,22 @@ function build_model(; relative_wind = true, poleward_sink = true)
     #### Wind boundary condition ####
     ################################################
 
-    # checkpoint_2 wind parameters (reverted): trade maximum 8 m s⁻¹ at ±5°, narrow
-    # belt (jet_width 2.5°), plus the 0.9 equatorial enhancement built into the
-    # profile.  u₁₀_equator / u₁₀_wall_drop are no longer used by this profile.
-    u₁₀_trades  = 8.0    # easterly maximum at the trade latitudes ±jet_lat
-    jet_lat     = 5.0    # trade maximum at ±5°
-    jet_width   = 2.5    # narrow trade belt
+    # Smooth-bump + wall-taper wind (non-zero at the walls).  Equator dip
+    # u₁₀_equator, off-equatorial trade peak u₁₀_trades at ±jet_lat, easterlies
+    # tapering to below the equatorial value (but NOT zero) at the N/S walls.
+    u₁₀_equator   = 7.0    # easterly wind speed at the equator (dip)
+    u₁₀_trades    = 8.0    # easterly maximum at the trade latitudes ±jet_lat
+    jet_lat       = 5    # trade peak latitude (±6°)
+    u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 5.4 m/s)
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days
 
     τx_parameters = (;
+        u₁₀_equator,
         u₁₀_trades,
         jet_lat,
-        jet_width,
+        u₁₀_wall_drop,
         cᴰ,
         ρₐ,
         ρₒ,
@@ -392,10 +384,6 @@ function build_model(; relative_wind = true, poleward_sink = true)
     z_ref      = -150.0    # reference thermocline depth (m)
     d_ref      = 120.0     # reference thermocline thickness (m)
 
-    # sink_on scales the poleward sink: 1 when poleward_sink=true, 0 when off.
-    # (Solar penetration is always applied, so the T body forcing is always built.)
-    sink_on = poleward_sink ? 1.0 : 0.0
-
     sink_params = (;
         sponge_width_y,
         Ly,
@@ -403,13 +391,10 @@ function build_model(; relative_wind = true, poleward_sink = true)
         T_surf_ref,
         T_deep_ref,
         z_ref,
-        d_ref,
-        sink_on,
-        Q_solar,
-        h_solar
+        d_ref
     )
 
-    # T body forcing = penetrating solar (always) + poleward sink (toggled by sink_on).
+    # Toggle the poleward heat sink with the `poleward_sink` keyword to build_model.
     T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
 
     ################################################
@@ -435,6 +420,24 @@ function build_model(; relative_wind = true, poleward_sink = true)
         background_κz = 1e-5,
         background_νz = 1e-3)
 
+    # Richardson-number-dependent VERTICAL mixing (Oceananigans built-in), ADDED on
+    # top of the constant background above.  It raises κ and ν where the gradient
+    # Richardson number Ri = N²/(u_z²+v_z²) is low (strong shear / weak stratification
+    # — the surface layer and EUC flanks) and tapers them to ~0 in the sharply
+    # stratified thermocline, so mixing is concentrated where shear instability
+    # actually mixes.  Form: κ = κ₀·τ(Ri), ν = ν₀·τ(Ri) with the tanh taper
+    # τ = ½(1 - tanh((Ri-Ri₀)/Riᵟ)).  κᶜᵃ = 0 here because the convective valve is
+    # already provided by the ConvectiveAdjustmentVerticalDiffusivity above (avoid
+    # double-counting N²<0).  Vertically implicit → does NOT constrain Δt.
+    # ⚠ Oceananigans flags this closure as experimental / parameters uncalibrated;
+    # ν₀, κ₀, Ri₀, Riᵟ are starting values to TUNE against the EUC/thermocline.
+    ri_mixing = RiBasedVerticalDiffusivity(; warning = false,
+                                             ν₀  = 1e-2,   # max shear viscosity   (low Ri)
+                                             κ₀  = 1e-2,   # max shear diffusivity (low Ri)
+                                             κᶜᵃ = 0.0,    # convection handled by CAVD above
+                                             Ri₀ = 0.1,    # taper centre (Richardson number)
+                                             Riᵟ = 0.4)    # taper width
+
     # Horizontal mixing: BIHARMONIC viscosity on MOMENTUM ONLY (κ defaults to 0).
     # Scale-selective — it damps the 2Δx grid-scale checkerboard noise (the
     # vertical stripes in w) by smoothing the velocity field that generates it,
@@ -446,7 +449,9 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # Tracers rely on WENO advection (overshoot-limited) + the small vertical κ.
     horizontal_mixing = HorizontalScalarBiharmonicDiffusivity(ν = 1e12)
 
-    closure = (vertical_mixing, horizontal_mixing)
+    closure = (vertical_mixing, ri_mixing, horizontal_mixing)
+    # To revert to the pre-Ri (checkpoint_2) closure, drop ri_mixing:
+    # closure = (vertical_mixing, horizontal_mixing)
 
 
     model = HydrostaticFreeSurfaceModel(
@@ -457,14 +462,19 @@ function build_model(; relative_wind = true, poleward_sink = true)
         coriolis            = coriolis,
         closure             = closure,
         momentum_advection  = WENO(order = 3),
-        # High-order tracer advection: order-3 WENO is the most diffusive WENO and
-        # was numerically mixing heat across the sharp thermocline (eroding the
-        # eastern cold tongue's source water).  Order 7 has far less spurious
-        # diapycnal mixing while staying non-oscillatory, so the thermocline
-        # stays sharp.  (Needs grid halo ≥ 4 — set above.)
-        tracer_advection    = WENO(order = 7),
+        # Tracer advection: WENO order 5 (lowered from 7).  Order 7 is the least
+        # dissipative WENO and left the equatorial cold-tongue front (advected by the
+        # SEC at dx=107 km) ringing with undamped 2Δx noise (surface T zig-zagging
+        # ±1-2.5 °C, corrupting the shallow eastern thermocline).  Order 5 adds more
+        # built-in dissipation to damp that advective dispersion, while staying far
+        # less diffusive than order 3 (which originally eroded the thermocline).
+        # Watch: (a) does the eastern zig-zag collapse, (b) does the deep western
+        # thermocline stay sharp.  (Needs grid halo ≥ 3; halo is 4.)
+        tracer_advection    = WENO(order = 5),
         boundary_conditions = (u = u_bcs, v = v_bcs, T = T_bcs, S = S_bcs),
-        forcing             = (u = u_forcing, v = v_forcing, T = T_forcing)
+        forcing             = poleward_sink ?
+                              (u = u_forcing, v = v_forcing, T = T_forcing) :
+                              (u = u_forcing, v = v_forcing)
     )
 
     ################################################
