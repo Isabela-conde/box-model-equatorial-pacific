@@ -36,7 +36,7 @@ grid,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 30days,    # Stage-1 GPU test; raise for the long control
+          stop_time = 600days,    
           relative_wind = false,
           poleward_sink = true)
 
