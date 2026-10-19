@@ -29,7 +29,7 @@ plot_meridional_last100(filepath, output_dir; window_days = 100, depth_max = 400
 plot_surface_last100(filepath, output_dir; window_days = 100)
 
 # Surface heat budget — PARAMS MUST MATCH THE RUN.
-# Defaults match the current model (λ_T=7e-6, evaporation, 70 W/m² solar):
+# Defaults match the current model (pure SST restoring, λ_T=2e-5; no evaporation or solar):
 plot_surface_heat_budget(filepath, output_dir)
 
 # Momentum spin-down diagnostic, if the file is present:

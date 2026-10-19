@@ -303,8 +303,8 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # tapering to below the equatorial value (but NOT zero) at the N/S walls.
     u₁₀_equator   = 7.0    # easterly wind speed at the equator (dip)
     u₁₀_trades    = 8.0    # easterly maximum at the trade latitudes ±jet_lat
-    jet_lat       = 5    # trade peak latitude (±6°)
-    u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 5.4 m/s)
+    jet_lat       = 5    # trade peak latitude (±5°)
+    u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 3.2 m/s)
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days

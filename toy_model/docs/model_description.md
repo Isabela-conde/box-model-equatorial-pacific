@@ -26,7 +26,7 @@ The domain is a closed rectangular box on an equatorial β-plane.
 |---|---|---|
 | Zonal extent | $L_x$ | $1.5\times10^7$ m (≈ 15 000 km) |
 | Meridional extent | $L_y$ | $2.22\times10^6$ m (≈ ±10°) |
-| Depth | $L_z$ | 25000 m |
+| Depth | $L_z$ | 2000 m |
 | Grid points | $N_x\times N_y\times N_z$ | $140\times40\times60$ |
 | Horizontal spacing | $\Delta x,\ \Delta y$ | ≈ 107 km, ≈ 55 km |
 | Topology | — | bounded in all three directions |
@@ -287,9 +287,11 @@ initial deep temperature (3.5 °C) so the abyss is not nudged.
 
 The sink is a **build-time switch**: the `poleward_sink` keyword to `build_model`
 (threaded through `run_model`) attaches this forcing when `true` and omits it when
-`false`. It is currently **off** (matching the reference run): the meridional heat
-balance is instead carried by the N/S wall heat fluxes of §4.3. With the sink on,
-the basin equilibrates but the N/S bands cool the whole column.
+`false`. It is currently **on** in the run script: the N/S bands relax T toward the
+cool extratropical column, providing the poleward heat export. (Note: the N/S wall
+heat-flux dipole of §4.3 is also active, so meridional heat forcing is currently
+applied both ways — the Paper-1 plan is to drop the wall dipole and keep this band
+relaxation.)
 
 | $\lambda_{\rm sink}$ | $T_{\rm surf}^{\rm ref}$ | $T_{\rm deep}^{\rm ref}$ | $z_{\rm ref}$ | $d_{\rm ref}$ |
 |---|---|---|---|---|
@@ -456,6 +458,6 @@ core ≈ 100–150 m) beneath the westward surface flow (blue), and weak flow be
 | Salinity | uniform evap $1\times10^{-8}$ m s⁻¹ + restore $5\times10^{-7}$ m s⁻¹ to 34.6 g kg⁻¹ |
 | N/S wall heat flux | prescribed depth-dipole, `surface_amp`$=5\times10^{-5}$ |
 | Momentum drag | sponge $1/5$ day (walls); deep drag $1/20$ day below 300–550 m |
-| Heat sink | $1/150$ day toward 22 °C in N/S bands (`poleward_sink`, currently **off**) |
+| Heat sink | $1/150$ day toward 22 °C in N/S bands (`poleward_sink`, currently **on**) |
 | Closure | convective adjustment ($\kappa_{\rm conv}=1$) + biharmonic $\nu_4=10^{12}$ m⁴s⁻¹ |
 | Advection | WENO-3 momentum, WENO-7 tracers |
