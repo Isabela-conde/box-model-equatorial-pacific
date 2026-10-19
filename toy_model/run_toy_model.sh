@@ -11,8 +11,10 @@
 #PBS -l ncpus=12
 #PBS -l mem=48GB
 #PBS -l walltime=10:00:00
-#PBS -l storage=scratch/e14+gdata/e14      # repo+outputs on scratch/e14, julia+depot on gdata/e14
-#PBS -l wd                                  # start in the dir qsub was run from
+# storage: repo+outputs on scratch/e14, julia+depot on gdata/e14
+#PBS -l storage=scratch/e14+gdata/e14
+# wd: start in the dir qsub was run from
+#PBS -l wd
 #PBS -N toy_model
 #PBS -j oe
 #PBS -o toy_model.log
