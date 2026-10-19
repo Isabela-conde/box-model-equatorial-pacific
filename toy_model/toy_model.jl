@@ -216,12 +216,12 @@ end
 
 function build_model(; relative_wind = true, poleward_sink = true)
 
-    Nx = 140
-    Ny = 40
+    Nx = 600         # Δx ≈ 25 km (was 140 → 107 km)
+    Ny = 150         # ±15° at Δy ≈ 22 km (was 60 → 55 km)
     Nz = 60
 
     Lx = 1.5e7
-    Ly = 2.22e6
+    Ly = 3.33e6      # ±15° (was 2.22e6 = ±10°); 500 km sponges/sink bands now sit at ~10.5–15°
     Lz = 2000
 
     refinement = 3.5
@@ -232,7 +232,7 @@ function build_model(; relative_wind = true, poleward_sink = true)
     Σ(k)  = (1 - exp(-stretching * h(k))) / (1 - exp(-stretching))
     z_interfaces(k) = Lz * (ζ₀(k) * Σ(k) - 1)
 
-    grid = RectilinearGrid(CPU(),
+    grid = RectilinearGrid(GPU(),
                            size     = (Nx, Ny, Nz),
                            halo     = (4, 4, 4),   # ≥4 required for WENO(order=7)
                            x        = (0, Lx),
@@ -303,8 +303,8 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # tapering to below the equatorial value (but NOT zero) at the N/S walls.
     u₁₀_equator   = 7.0    # easterly wind speed at the equator (dip)
     u₁₀_trades    = 8.0    # easterly maximum at the trade latitudes ±jet_lat
-    jet_lat       = 5    # trade peak latitude (±5°)
-    u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 3.2 m/s)
+    jet_lat       = 10   # trade peak latitude (±10°, retuned for the ±15° domain)
+    u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 3.6 m/s at ±15°)
     cᴰ          = 2e-3
     ρₐ          = 1.2
     spinup_time = 10days
@@ -436,7 +436,11 @@ function build_model(; relative_wind = true, poleward_sink = true)
                                              κ₀  = 1e-2,   # max shear diffusivity (low Ri)
                                              κᶜᵃ = 0.0,    # convection handled by CAVD above
                                              Ri₀ = 0.1,    # taper centre (Richardson number)
-                                             Riᵟ = 0.4)    # taper width
+                                             Riᵟ = 0.4,    # taper width
+                                             # Smooth Ri horizontally BEFORE computing κ,ν: breaks the
+                                             # noisy-shear → noisy-Ri → noisy-κ feedback that made the
+                                             # 2Δx equatorial lines at coarse Δx.  Not exported → qualify.
+                                             horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter())
 
     # Horizontal mixing: BIHARMONIC viscosity on MOMENTUM ONLY (κ defaults to 0).
     # Scale-selective — it damps the 2Δx grid-scale checkerboard noise (the

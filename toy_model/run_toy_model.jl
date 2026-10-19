@@ -1,5 +1,6 @@
 using Oceananigans.Units: days
 using Dates
+using CUDA   # GPU run (per the Gadi guide); needs Pkg.add("CUDA") in this project env
 
 include("toy_model.jl")
 include("toy_plots.jl")
@@ -35,8 +36,8 @@ grid,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 400days,   
-          relative_wind = true,
+          stop_time = 30days,    # Stage-1 GPU test; raise for the long control
+          relative_wind = false,
           poleward_sink = true)
 
 
