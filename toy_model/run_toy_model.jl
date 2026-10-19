@@ -71,7 +71,10 @@ plot_ymean_top_400m(filepath,
                    grid,
                    output_dir)
 
-plot_surface_video(filepath,
+# Surface video now reads the 2-day INSTANTANEOUS surface-slice file written by
+# run_model (the 3-D file `filepath` is 10-day means, so it has far fewer frames).
+surface_file = joinpath(output_dir, filename * "_surface.jld2")
+plot_surface_video(surface_file,
                   grid,
                   output_dir)
 

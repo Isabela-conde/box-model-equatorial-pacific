@@ -566,14 +566,71 @@ function run_model(output_dir;
     u, v, w = model.velocities
     dTdz = ∂z(T)
 
-    save_interval = 48hours
+    # ---- 3-D fields: TIME-AVERAGED and sparse (the big file) ----------------------
+    # Instantaneous 3-D snapshots every 48 h were ~259 MB each at 600×150×60 (6 fields)
+    # → ~78 GB for a 600-day run.  Instead write 10-day MEANS every 10 days: 60 snapshots
+    # for 600 d (~15 GB).  Means are what the equilibrium / thermocline / EUC diagnostics
+    # want anyway.  Same fields and names, so every existing plot still works unchanged.
+    # (The eastern 2Δx noise is a STANDING pattern, so it survives averaging — the
+    # line-check still works on this output.)  Knob: raise save_interval to 20days to halve it.
+    save_interval = 10days
     output_file   = joinpath(output_dir, filename * ".jld2")
 
     simulation.output_writers[:fields] =
         JLD2Writer(model,
                    (; T, S, u, v, w, dTdz),
                    filename           = output_file,
-                   schedule           = TimeInterval(save_interval),
+                   schedule           = AveragedTimeInterval(save_interval; window = save_interval),
+                   overwrite_existing = true)
+
+    # ---- 2-D slices: small, INSTANTANEOUS, frequent (every 2 days) ----------------
+    # These carry the high-time-resolution diagnostics so the 3-D file doesn't have to.
+    # All four together are ~1.5 GB per 600 d.
+    slice_interval = 2days
+    Nx, Ny, Nz     = size(grid)
+
+    # surface layer (top cell) — feeds the surface video / surface maps.
+    # dTdz included so plot_surface_video's ∂T/∂z panel works off this file.
+    simulation.output_writers[:surface] =
+        JLD2Writer(model,
+                   (; T, S, u, v, w, dTdz),
+                   filename           = joinpath(output_dir, filename * "_surface.jld2"),
+                   indices            = (:, :, Nz),
+                   schedule           = TimeInterval(slice_interval),
+                   overwrite_existing = true)
+
+    # meridional (y–z) sections at ≈140°W and ≈110°W.  The idealised basin spans
+    # 120°E→80°W, so 140°W ≈ 0.625·Lx and 110°W ≈ 0.81·Lx (same mapping as
+    # pacific_lon_to_x in toy_plots.jl).
+    i140 = round(Int, 0.625 * Nx)
+    i110 = round(Int, 0.81  * Nx)
+
+    simulation.output_writers[:sec140W] =
+        JLD2Writer(model,
+                   (; T, S, u, v, w),
+                   filename           = joinpath(output_dir, filename * "_140W.jld2"),
+                   indices            = (i140, :, :),
+                   schedule           = TimeInterval(slice_interval),
+                   overwrite_existing = true)
+
+    simulation.output_writers[:sec110W] =
+        JLD2Writer(model,
+                   (; T, S, u, v, w),
+                   filename           = joinpath(output_dir, filename * "_110W.jld2"),
+                   indices            = (i110, :, :),
+                   schedule           = TimeInterval(slice_interval),
+                   overwrite_existing = true)
+
+    # zonal (x–z) y-MEAN section — thermocline tilt and the EUC along the basin.
+    # (Equatorial-BAND means are still computed by the plots from the 3-D file.)
+    T_ymean = Field(Average(T; dims = 2))
+    u_ymean = Field(Average(u; dims = 2))
+
+    simulation.output_writers[:ymean] =
+        JLD2Writer(model,
+                   (; T = T_ymean, u = u_ymean),
+                   filename           = joinpath(output_dir, filename * "_ymean.jld2"),
+                   schedule           = TimeInterval(slice_interval),
                    overwrite_existing = true)
 
     ################################################

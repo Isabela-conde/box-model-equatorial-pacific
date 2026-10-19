@@ -454,6 +454,10 @@ function plot_equatorial_band_top_400m(filepath,
 end
 
 function plot_surface_video(filepath, grid, output_dir)
+    # `filepath` can be the full 3-D file OR the `_surface.jld2` slice file written
+    # by run_model (indices = (:, :, Nz), every 2 days).  k_surface_* below picks the
+    # top level either way, so the slice file (1 level) just works and gives many
+    # more frames than the 10-day-mean 3-D file.
 
     ts = (
         u  = FieldTimeSeries(filepath, "u"),
@@ -515,7 +519,11 @@ function plot_surface_video(filepath, grid, output_dir)
     Colorbar(fig[2,3], hmT)
     Colorbar(fig[3,3], hmdTdz)
 
-    record(fig,
+    # Must be qualified: CUDA.jl ALSO exports `record` (CuEvent), so with
+    # `using CUDA` in run_toy_model.jl a bare `record` is ambiguous in Main and
+    # errors with "UndefVarError: `record` not defined".  The other videos already
+    # use CairoMakie.record — this one was the odd one out.
+    CairoMakie.record(fig,
            joinpath(output_dir, "surface_fields.mp4"),
            1:length(times),
            framerate = 8) do i
