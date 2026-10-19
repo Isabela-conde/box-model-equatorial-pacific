@@ -27,7 +27,13 @@ set -e
 export JULIA_DEPOT_PATH=/g/data/e14/$USER/.julia
 export PATH=/g/data/e14/$USER/julia-1.10/bin:$PATH
 
-# No cuda module and no JULIA_CUDA_* exports needed on CPU.
+# The cuda module IS needed even on CPU: Oceananigans always loads CUDA.jl, and with
+# the local-toolkit preference its jlls (CUDA_Compiler_jll etc.) must find the toolkit
+# to initialise — otherwise they try to download an artifact, which fails offline.
+# No GPU is used; this just lets CUDA.jl load.
+module load cuda/12.6.2
+export JULIA_CUDA_USE_COMPAT=false
+
 # LIVE LOG: PBS only delivers toy_model_cpu.log when the job ENDS, so julia's output
 # is redirected to run_cpu_<jobid>.out on /scratch — `tail -f` it to watch progress.
 # -t uses all 12 cores (Oceananigans CPU is multithreaded).
