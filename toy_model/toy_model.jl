@@ -458,8 +458,8 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # closure = (vertical_mixing, horizontal_mixing)
 
 
-    model = HydrostaticFreeSurfaceModel(
-        grid;
+    model = HydrostaticFreeSurfaceModel(;
+        grid,   # keyword form: the only one Oceananigans 0.96 accepts (newer versions also allow positional)
         free_surface        = ImplicitFreeSurface(),
         buoyancy            = buoyancy,
         tracers             = (:T, :S),
