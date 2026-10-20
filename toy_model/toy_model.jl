@@ -229,7 +229,9 @@ end
 ################################################
 
 function build_model(; relative_wind = true, poleward_sink = true,
-                       κ₀_Ri = 1e-2)   # Ri-scheme max tracer diffusivity (branch experiments)
+                       κ₀_Ri = 1e-2,   # Ri-scheme max tracer diffusivity (branch experiments)
+                       ν₀_Ri = 1e-2,   # Ri-scheme max shear viscosity    (branch experiments)
+                       cᴰ    = 2e-3)   # wind drag coefficient; 1.2e-3 is the standard value (branch experiments)
 
     Nx = 600         # Δx ≈ 25 km (was 140 → 107 km)
     Ny = 150         # ±15° at Δy ≈ 22 km (was 60 → 55 km)
@@ -321,7 +323,8 @@ function build_model(; relative_wind = true, poleward_sink = true,
     u₁₀_trades    = 8.0    # easterly maximum at the trade latitudes ±jet_lat
     jet_lat       = 10   # trade peak latitude (±10°, retuned for the ±15° domain)
     u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 3.6 m/s at ±15°)
-    cᴰ          = 2e-3
+    # cᴰ is a build_model keyword (default 2e-3).  With u₁₀ = 7 m/s that gives
+    # τ_eq = 0.118 N m⁻², ~2× the observed annual mean at 140W; cᴰ = 1.2e-3 → 0.071.
     ρₐ          = 1.2
     spinup_time = 10days
 
@@ -455,7 +458,7 @@ function build_model(; relative_wind = true, poleward_sink = true,
     # ⚠ Oceananigans flags this closure as experimental / parameters uncalibrated;
     # ν₀, κ₀, Ri₀, Riᵟ are starting values to TUNE against the EUC/thermocline.
     ri_mixing = RiBasedVerticalDiffusivity(; warning = false,
-                                             ν₀  = 1e-2,   # max shear viscosity   (low Ri)
+                                             ν₀  = ν₀_Ri,  # max shear viscosity (low Ri); build_model keyword
                                              # max shear diffusivity (low Ri).  Now a build_model
                                              # keyword: with κ₀ = ν₀ (Pr = 1) the scheme mixed the
                                              # restoring heat 75 m down at the equator → N² ~3e-5,
@@ -564,11 +567,13 @@ function run_model(output_dir;
                    plot_initial_conditions  = false,
                    save_interval            = 30days,   # 3-D time-mean output cadence
                    pickup                   = false,    # false = from rest; or path to a checkpoint file
-                   κ₀_Ri                    = 1e-2)     # Ri-scheme tracer diffusivity (see build_model)
+                   κ₀_Ri                    = 1e-2,     # Ri-scheme tracer diffusivity (see build_model)
+                   ν₀_Ri                    = 1e-2,     # Ri-scheme shear viscosity
+                   cᴰ                       = 2e-3)     # wind drag coefficient
 
     model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
                                                poleward_sink = poleward_sink,
-                                               κ₀_Ri = κ₀_Ri)
+                                               κ₀_Ri = κ₀_Ri, ν₀_Ri = ν₀_Ri, cᴰ = cᴰ)
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)
