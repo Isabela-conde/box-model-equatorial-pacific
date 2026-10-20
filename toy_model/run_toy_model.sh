@@ -11,7 +11,7 @@
 #PBS -l ngpus=1
 #PBS -l ncpus=12
 #PBS -l mem=90GB
-#PBS -l walltime=04:00:00
+#PBS -l walltime=08:00:00
 # storage: repo+outputs on scratch/e14, julia+depot on gdata/e14
 #PBS -l storage=scratch/e14+gdata/e14
 # wd: start in the dir qsub was run from
