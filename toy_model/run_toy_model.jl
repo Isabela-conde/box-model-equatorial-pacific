@@ -7,8 +7,34 @@ include("toy_plots.jl")
 
 filename = "toy_model"
 
+# ---------------------------------------------------------------------------
+# WHICH RUN?  Chosen at submit time so several branches can sit in the queue
+# together without editing this file between submissions:
+#     qsub -v BRANCH=control   run_toy_model.sh
+#     qsub -v BRANCH=kappa3e-3 run_toy_model.sh
+#     qsub run_toy_model.sh                      (no BRANCH → "spinup")
+#   spinup     : 5-year run from rest (1825 d, 30-day means, checkpoint every 100 d)
+#   control    : 1-year branch from the spin-up checkpoint, nothing changed
+#   kappa3e-3  : same branch, Ri-scheme tracer diffusivity κ₀ 1e-2 → 3e-3 (SEC test)
+# Branch stop_time is ABSOLUTE = checkpoint time + branch length.  The checkpointer
+# fires every 100 days, so the 1825-day spin-up's last checkpoint is at day 1800.
+# ---------------------------------------------------------------------------
+branch      = get(ENV, "BRANCH", isempty(ARGS) ? "spinup" : ARGS[1])
+spinup_ckpt = "runs/toy_model_2026-10-21_005204/checkpoint_iteration259762.jld2"   # model day 1800
+
+if branch == "spinup"
+    pickup = false;        stop_time = 1825days;             save_interval = 30days;  κ₀_Ri = 1e-2
+elseif branch == "control"
+    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  κ₀_Ri = 1e-2
+elseif branch == "kappa3e-3"
+    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  κ₀_Ri = 3e-3
+else
+    error("unknown BRANCH = \"$branch\" (use spinup, control or kappa3e-3)")
+end
+println("BRANCH = $branch | pickup = $pickup | stop_time = $(stop_time/days) days | κ₀_Ri = $κ₀_Ri")
+
 timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
-output_dir = joinpath("runs", filename * "_" * timestamp)
+output_dir = joinpath("runs", filename * "_" * branch * "_" * timestamp)
 
 mkpath(output_dir)
 script_dir = @__DIR__
@@ -30,22 +56,17 @@ cp(joinpath(script_dir, "toy_model.jl"),
 # relative_wind = true  → current-feedback (relative-wind) stress
 # relative_wind = false → resting-ocean stress  
 # (set to false for now to isolate whether the relative wind is killing the SEC)
-# Spin-up / branch control.
-#   pickup = false  → spin-up from rest.
-#   pickup = "runs/toy_model_<spinup>/checkpoint_iteration<N>.jld2" → continue from
-#            that state (control or perturbation branch).  stop_time is then ABSOLUTE:
-#            e.g. a 1-year branch off a 1825-day spin-up needs stop_time = 2190days.
-pickup = false
-
+# pickup / stop_time / save_interval / κ₀_Ri come from the BRANCH block above.
 model,
 grid,
 τx_parameters,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 1825days,        # 5-year spin-up (~3.5 h on gpuvolta incl. plots)
-          save_interval = 30days,      # 3-D time-mean cadence (10days for short runs)
+          stop_time = stop_time,
+          save_interval = save_interval,
           pickup = pickup,
+          κ₀_Ri = κ₀_Ri,
           relative_wind = false,
           poleward_sink = true)
 

@@ -34,6 +34,9 @@ module load cuda/12.6.2
 export JULIA_CUDA_USE_COMPAT=false
 export JULIA_CUDA_MEMORY_POOL=none
 
+# Which run is chosen with the BRANCH environment variable, passed by qsub -v and
+# read by run_toy_model.jl:   qsub -v BRANCH=control run_toy_model.sh
+# (no -v → the 5-year spin-up).  See the BRANCH block in run_toy_model.jl.
 # --project=. uses the Project.toml/Manifest.toml created in toy_model/ at setup.
 # LIVE LOG: PBS only delivers toy_model.log when the job ENDS (stdout is spooled on
 # the compute node until then). Redirecting here writes run_<jobid>.out to /scratch

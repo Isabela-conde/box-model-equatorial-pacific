@@ -236,7 +236,8 @@ end
 #### Build model ####
 ################################################
 
-function build_model(; relative_wind = true, poleward_sink = true)
+function build_model(; relative_wind = true, poleward_sink = true,
+                       κ₀_Ri = 1e-2)   # Ri-scheme max tracer diffusivity (branch experiments)
 
     Nx = 600         # Δx ≈ 25 km (was 140 → 107 km)
     Ny = 150         # ±15° at Δy ≈ 22 km (was 60 → 55 km)
@@ -465,7 +466,13 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # ν₀, κ₀, Ri₀, Riᵟ are starting values to TUNE against the EUC/thermocline.
     ri_mixing = RiBasedVerticalDiffusivity(; warning = false,
                                              ν₀  = 1e-2,   # max shear viscosity   (low Ri)
-                                             κ₀  = 1e-2,   # max shear diffusivity (low Ri)
+                                             # max shear diffusivity (low Ri).  Now a build_model
+                                             # keyword: with κ₀ = ν₀ (Pr = 1) the scheme mixed the
+                                             # restoring heat 75 m down at the equator → N² ~3e-5,
+                                             # Ri 0.1–0.25 → ν ~6e-3 → EUC momentum reached the
+                                             # surface, no SEC (spin-up 2026-10-21_005204).  PP81
+                                             # has κ ≈ ν/(1+5Ri) ≈ ν/3 here → test κ₀ = 3e-3.
+                                             κ₀  = κ₀_Ri,
                                              κᶜᵃ = 0.0,    # convection handled by CAVD above
                                              Ri₀ = 0.1,    # taper centre (Richardson number)
                                              Riᵟ = 0.4,    # taper width
@@ -566,10 +573,12 @@ function run_model(output_dir;
                    plot_boundary_conditions = false,
                    plot_initial_conditions  = false,
                    save_interval            = 30days,   # 3-D time-mean output cadence
-                   pickup                   = false)    # false = from rest; or path to a checkpoint file
+                   pickup                   = false,    # false = from rest; or path to a checkpoint file
+                   κ₀_Ri                    = 1e-2)     # Ri-scheme tracer diffusivity (see build_model)
 
     model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
-                                               poleward_sink = poleward_sink)
+                                               poleward_sink = poleward_sink,
+                                               κ₀_Ri = κ₀_Ri)
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)
