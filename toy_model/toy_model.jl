@@ -277,7 +277,11 @@ function build_model(; relative_wind = true, poleward_sink = true)
     # Restored to checkpoint_2's strong value: weak λ_T let the cold tongue crash
     # (→ eastern convection) and the warm pool drift (→ flat thermocline).  Target
     # SST is zonally structured: warm pool (T_warm) west, cold tongue (T_cold) east.
-    λ_T         = 2e-5
+    # 2026-10-20: 2e-5 → 4e-5 (≈160 W m⁻² K⁻¹).  At 2e-5 the cold tongue sat at 16 °C
+    # vs the 24 °C target (eastern-wall upwelling out-pumped the restoring; 800-day run
+    # 2026-10-20_182149).  Doubling pins SST harder without touching the dynamics; the
+    # price is a damped SST response in the warming experiments.
+    λ_T         = 4e-5
     T_warm      = 29.5     # western warm-pool target
     T_cold      = 24.0     # eastern cold-tongue target
     x_front     = 0.6      # front location as fraction of basin width (W→E)

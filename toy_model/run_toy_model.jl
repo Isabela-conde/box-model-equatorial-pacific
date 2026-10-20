@@ -102,10 +102,10 @@ plot_meridional_last100(filepath, output_dir; window_days = 100, depth_max = 400
 # Surface fields (last-100-day mean):
 plot_surface_last100(filepath, output_dir; window_days = 100)
 
-# Surface heat budget — uses the function's default flux params, which track the
-# current model (λ_T=7e-6, evaporation, 70 W/m² solar).  If you change the model's
-# surface-flux params, update plot_surface_heat_budget's defaults (or pass them here).
-plot_surface_heat_budget(filepath, output_dir)
+# Surface heat budget — reconstructs the restoring flux from the saved SST, so its
+# λ_T / target params MUST match toy_model.jl (λ_T doubled to 4e-5 on 2026-10-20;
+# the function's own default is still 2e-5).
+plot_surface_heat_budget(filepath, output_dir; λ_T = 4e-5)
 
 
 
