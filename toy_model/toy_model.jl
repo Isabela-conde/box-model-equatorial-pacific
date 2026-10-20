@@ -564,7 +564,9 @@ function run_model(output_dir;
                    relative_wind            = true,
                    poleward_sink            = true,
                    plot_boundary_conditions = false,
-                   plot_initial_conditions  = false)
+                   plot_initial_conditions  = false,
+                   save_interval            = 30days,   # 3-D time-mean output cadence
+                   pickup                   = false)    # false = from rest; or path to a checkpoint file
 
     model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
                                                poleward_sink = poleward_sink)
@@ -604,8 +606,8 @@ function run_model(output_dir;
     # for 600 d (~15 GB).  Means are what the equilibrium / thermocline / EUC diagnostics
     # want anyway.  Same fields and names, so every existing plot still works unchanged.
     # (The eastern 2Δx noise is a STANDING pattern, so it survives averaging — the
-    # line-check still works on this output.)  Knob: raise save_interval to 20days to halve it.
-    save_interval = 10days
+    # line-check still works on this output.)  save_interval is a run_model keyword:
+    # 10days for ≤800-day runs, 30days for multi-year spin-ups (~10 GB per 5 years).
     output_file   = joinpath(output_dir, filename * ".jld2")
 
     simulation.output_writers[:fields] =
@@ -695,7 +697,24 @@ function run_model(output_dir;
                    schedule           = TimeInterval(ts_interval),
                    overwrite_existing = true)
 
-    run!(simulation)
+    # ---- Checkpointer: full model state every 100 days, latest kept ----------------
+    # Enables spin-up → branch experiments: a later run passes this file as `pickup`
+    # and continues from this state.  Saves u, v, T, S, η, the AB2 tendencies and the
+    # clock (~0.5 GB per file; cleanup = true deletes the previous one).
+    simulation.output_writers[:checkpointer] =
+        Checkpointer(model;
+                     schedule = TimeInterval(100days),
+                     dir      = output_dir,
+                     prefix   = "checkpoint",
+                     cleanup  = true)
+
+    # pickup = false → start from rest (initial conditions above).
+    # pickup = "<run>/checkpoint_iteration<N>.jld2" → restore that state AND clock, so
+    # stop_time is then ABSOLUTE (spin-up end + branch length).  Forcing/BC parameters
+    # may differ from the checkpointed run (that is the perturbation); grid and closures
+    # must not.  The file path must be explicit: pickup = true would look in THIS run's
+    # (empty) output_dir.
+    run!(simulation; pickup)
 
     return model, grid, τx_parameters, output_file
 end

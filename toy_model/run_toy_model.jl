@@ -30,13 +30,22 @@ cp(joinpath(script_dir, "toy_model.jl"),
 # relative_wind = true  → current-feedback (relative-wind) stress
 # relative_wind = false → resting-ocean stress  
 # (set to false for now to isolate whether the relative wind is killing the SEC)
+# Spin-up / branch control.
+#   pickup = false  → spin-up from rest.
+#   pickup = "runs/toy_model_<spinup>/checkpoint_iteration<N>.jld2" → continue from
+#            that state (control or perturbation branch).  stop_time is then ABSOLUTE:
+#            e.g. a 1-year branch off a 1825-day spin-up needs stop_time = 2190days.
+pickup = false
+
 model,
 grid,
 τx_parameters,
 filepath =
 run_model(output_dir;
           filename = filename,
-          stop_time = 800days,
+          stop_time = 1825days,        # 5-year spin-up (~3.5 h on gpuvolta incl. plots)
+          save_interval = 30days,      # 3-D time-mean cadence (10days for short runs)
+          pickup = pickup,
           relative_wind = false,
           poleward_sink = true)
 
