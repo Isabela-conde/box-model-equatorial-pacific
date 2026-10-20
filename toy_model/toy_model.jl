@@ -76,11 +76,10 @@ end
     return -τphys * spinup_ramp(t, p)
 end
 
-# NOTE: the prescribed north/south wall temperature fluxes were removed — the
-# N/S walls are now INSULATING (zero flux), consistent with the salinity walls
-# and the bottom.  Their job (net-zero vertical heat redistribution at the
-# subtropical edges) is superseded by the poleward heat sink (§ ns_band / sink_T),
-# which provides the actual net heat export and sets the cool subtropical column.
+# NOTE: the N/S walls are INSULATING (zero T flux), consistent with the salinity walls
+# and the bottom.  The checkpoint_2 wall heat-flux dipole was carried along until
+# 2026-10-21 but contributed +0.0003 PW — nothing measurable — and is gone; the poleward
+# heat sink (§ ns_band / sink_T) provides the actual net heat export.
 
 ################################################
 #### Surface heat flux (SST restoring) ####
@@ -115,37 +114,6 @@ end
 end
 
 ################################################
-#### North and south wall temperature fluxes ####
-################################################
-# Restored from checkpoint_2: a prescribed depth-dipole heat flux on the N/S walls
-# (hand-tuned from a global-model subtropical mean) that sets the off-equatorial
-# thermal structure feeding the subtropical→equatorial thermocline.  surface_amp
-# scales the whole thing; x_shape gives a weak zonal modulation.
-@inline function north_T_flux(x, z, p)
-    depth = -z
-    xnorm = x / p.Lx
-    x_shape = 1.0 + 0.25 * sin(2π * xnorm) + 0.10 * sin(6π * xnorm + 0.7)
-    surface_positive  =  1.8 * exp(-(depth / 20)^2)
-    shallow_negative  = -1.3 * exp(-((depth - 80) / 55)^2)
-    deeper_positive   =  0.4 * exp(-((depth - 100) / 150)^2)
-    return p.surface_amp * x_shape * (surface_positive + shallow_negative + deeper_positive)
-end
-
-@inline function south_T_flux(x, z, p)
-    depth = -z
-    xnorm = x / p.Lx
-    x_shape = 1.0 + 0.15 * sin(2π * xnorm + 0.5) + 0.05 * sin(6π * xnorm + 1.2)
-    surface_negative        = -1.8 * exp(-(depth / 20)^2)
-    shallow_positive        =  1.3 * exp(-((depth - 80) / 55)^2)
-    shallow_negative        = -0.22 * exp(-((depth - 320) / 120)^2)
-    shallow_positive_deeper =  0.28 * exp(-((depth - 430) / 70)^2)
-    return p.surface_amp * x_shape * (surface_negative + shallow_positive + shallow_negative + shallow_positive_deeper)
-end
-
-@inline north_T_flux_bc(x, z, t, p) = north_T_flux(x, z, p)
-@inline south_T_flux_bc(x, z, t, p) = south_T_flux(x, z, p)
-
-################################################
 #### Boundary sponge — damp u and v only ####
 ################################################
 
@@ -171,6 +139,24 @@ end
     -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * u
 @inline sponge_v(x, y, z, t, v, p) =
     -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * v
+
+# DISCRETE-FORM versions — the ones the model uses (same physics as above).  Like the
+# sink (see sink_T_discrete), these index model_fields by NAME so they cannot receive
+# the wrong field through Oceananigans 0.96.35's continuous `field_dependencies`
+# forcing bug.  u lives on x-faces and v on y-faces, so the node functions use the
+# matching locations.
+@inline function sponge_u_discrete(i, j, k, grid, clock, model_fields, p)
+    x = Oceananigans.Grids.xnode(i, j, k, grid, Face(), Center(), Center())
+    y = Oceananigans.Grids.ynode(i, j, k, grid, Face(), Center(), Center())
+    z = Oceananigans.Grids.znode(i, j, k, grid, Face(), Center(), Center())
+    return -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * @inbounds(model_fields.u[i, j, k])
+end
+@inline function sponge_v_discrete(i, j, k, grid, clock, model_fields, p)
+    x = Oceananigans.Grids.xnode(i, j, k, grid, Center(), Face(), Center())
+    y = Oceananigans.Grids.ynode(i, j, k, grid, Center(), Face(), Center())
+    z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Face(), Center())
+    return -(p.λ₀ * sponge_mask(x, y, p) + p.λ_deep * deep_mask(z, p)) * @inbounds(model_fields.v[i, j, k])
+end
 
 ################################################
 #### Poleward heat sink (N/S temperature relaxation) ####
@@ -226,9 +212,15 @@ end
 #### Salinity boundary condition ####
 ################################################
 
+# Same convention as the T flux: a POSITIVE top flux REMOVES salt.  So the restoring
+# must be +restore_rate·(S − S_target): S above target → positive flux → salt out →
+# negative feedback.  ⚠ Until 2026-10-21 this had a minus sign (anti-restoring, the
+# same error the T flux once had): basin-mean SSS drifted 34.61 → 35.26 over the
+# 5-year spin-up without ever approaching 34.6.  With the sign fixed, evaporation and
+# restoring balance at SSS ≈ 35.3, so the fix stops the drift without a shock.
 @inline function Jˢ(x, y, t, S, p)
     evaporation_flux = -p.evaporation_rate * S   # uniform evaporation (checkpoint_2); -ve → S increases
-    restoring_flux   = -p.restore_rate * (S - p.S_surface_target)
+    restoring_flux   = +p.restore_rate * (S - p.S_surface_target)
     return evaporation_flux + restoring_flux
 end
 
@@ -294,15 +286,12 @@ function build_model(; relative_wind = true, poleward_sink = true,
                                          field_dependencies = :T,
                                          parameters         = surface_T_flux_parameters)
 
-    # N/S wall heat-flux params (restored from checkpoint_2).
-    north_T_flux_parameters = (; Lx, surface_amp = 5e-5)
-    south_T_flux_parameters = (; Lx, surface_amp = 5e-5)
-
+    # N/S walls insulating (default no-flux).  The checkpoint_2 wall heat-flux dipole
+    # was removed 2026-10-21: its net was +0.0003 PW and its per-cell tendency ~4000×
+    # smaller than the SST restoring, i.e. it did nothing measurable.
     T_bcs = FieldBoundaryConditions(
         top    = surface_T_bc,
-        bottom = FluxBoundaryCondition(0),
-        north  = FluxBoundaryCondition(north_T_flux_bc, parameters = north_T_flux_parameters),
-        south  = FluxBoundaryCondition(south_T_flux_bc, parameters = south_T_flux_parameters)
+        bottom = FluxBoundaryCondition(0)
     )
 
     ################################################
@@ -400,8 +389,9 @@ function build_model(; relative_wind = true, poleward_sink = true,
         λ_deep
     )
 
-    u_forcing = Forcing(sponge_u; field_dependencies = :u, parameters = sponge_params)
-    v_forcing = Forcing(sponge_v; field_dependencies = :v, parameters = sponge_params)
+    # discrete_form: see sponge_u_discrete — avoids the 0.96.35 field_dependencies bug.
+    u_forcing = Forcing(sponge_u_discrete; discrete_form = true, parameters = sponge_params)
+    v_forcing = Forcing(sponge_v_discrete; discrete_form = true, parameters = sponge_params)
 
     # Poleward heat sink: relax T toward a cool extratropical profile in the N/S
     # bands so the net tropical heat uptake is exported and the basin equilibrates.
