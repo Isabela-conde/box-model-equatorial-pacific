@@ -200,6 +200,21 @@ end
 @inline sink_T(x, y, z, t, T, p) =
     -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
 
+# DISCRETE-FORM version of the same sink — this is the one the model uses.
+# ⚠ Oceananigans 0.96.35 (Gadi) hands a continuous `Forcing(sink_T; field_dependencies = :T)`
+# the WRONG field (≈0, apparently η) instead of T, so the sink evaluated
+# −λ·(0 − T_ref) = +λ·T_ref: a constant ~+15 PW HEATER (600-day run 2026-10-20_114944:
+# ocean warmed 250 W/m², 36 °C wall strips, thermocline sinking).  The discrete form
+# indexes model_fields.T by NAME, so it is immune to that bug; same physics as sink_T.
+# (0.107 on the laptop evaluates the continuous form correctly; both forms agree there.)
+@inline function sink_T_discrete(i, j, k, grid, clock, model_fields, p)
+    # ynode/znode (singular) are not exported at top level → qualify (works in 0.96 and 0.107)
+    y = Oceananigans.Grids.ynode(i, j, k, grid, Center(), Center(), Center())
+    z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
+    return -p.λ_T_sink * ns_band_mask(y, p) *
+           (@inbounds(model_fields.T[i, j, k]) - T_extratropical_ref(z, p))
+end
+
 ################################################
 #### Salinity boundary condition ####
 ################################################
@@ -395,7 +410,9 @@ function build_model(; relative_wind = true, poleward_sink = true)
     )
 
     # Toggle the poleward heat sink with the `poleward_sink` keyword to build_model.
-    T_forcing = Forcing(sink_T; field_dependencies = :T, parameters = sink_params)
+    # discrete_form: see sink_T_discrete — the continuous `field_dependencies = :T`
+    # form gets the wrong field in Oceananigans 0.96.35 and turns the sink into a heater.
+    T_forcing = Forcing(sink_T_discrete; discrete_form = true, parameters = sink_params)
 
     ################################################
     #### Model ####
