@@ -197,8 +197,15 @@ end
 # Poleward heat sink (the only T body forcing): relax T toward a cool extratropical
 # reference in the N/S bands.  Solar penetration was removed with the heat-flux
 # revert.  Attached only when poleward_sink=true (currently off).
+# Depth mask for the sink: ≈1 above ~150 m, 0.5 at z_sink_mid, ≈0 below ~450 m.
+# Without it the sink chilled the 300–900 m band water (−6.6 PW of the −8.5 PW total
+# in run 2026-10-20_150728), which is the EUC source water → 14 °C cold tongue and a
+# basin cooling at −2.7 PW.  Confining the sink to the upper ocean leaves the
+# poleward export of the cold-tongue heat uptake, which is its job.
+@inline sink_depth_mask(z, p) = 0.5 * (1 + tanh((z - p.z_sink_mid) / p.d_sink))
+
 @inline sink_T(x, y, z, t, T, p) =
-    -p.λ_T_sink * ns_band_mask(y, p) * (T - T_extratropical_ref(z, p))
+    -p.λ_T_sink * ns_band_mask(y, p) * sink_depth_mask(z, p) * (T - T_extratropical_ref(z, p))
 
 # DISCRETE-FORM version of the same sink — this is the one the model uses.
 # ⚠ Oceananigans 0.96.35 (Gadi) hands a continuous `Forcing(sink_T; field_dependencies = :T)`
@@ -211,7 +218,7 @@ end
     # ynode/znode (singular) are not exported at top level → qualify (works in 0.96 and 0.107)
     y = Oceananigans.Grids.ynode(i, j, k, grid, Center(), Center(), Center())
     z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
-    return -p.λ_T_sink * ns_band_mask(y, p) *
+    return -p.λ_T_sink * ns_band_mask(y, p) * sink_depth_mask(z, p) *
            (@inbounds(model_fields.T[i, j, k]) - T_extratropical_ref(z, p))
 end
 
@@ -398,6 +405,8 @@ function build_model(; relative_wind = true, poleward_sink = true)
     T_deep_ref = 3.5       # deep reference (matches initial deep T → no deep nudging)
     z_ref      = -150.0    # reference thermocline depth (m)
     d_ref      = 120.0     # reference thermocline thickness (m)
+    z_sink_mid = -300.0    # sink depth mask = 0.5 here (see sink_depth_mask)
+    d_sink     =   75.0    # taper width (m): mask ≈0.98 at 150 m, ≈0.02 at 450 m
 
     sink_params = (;
         sponge_width_y,
@@ -406,7 +415,9 @@ function build_model(; relative_wind = true, poleward_sink = true)
         T_surf_ref,
         T_deep_ref,
         z_ref,
-        d_ref
+        d_ref,
+        z_sink_mid,
+        d_sink
     )
 
     # Toggle the poleward heat sink with the `poleward_sink` keyword to build_model.
