@@ -123,31 +123,32 @@ C = R[1]
 # ---------------------------------------------------------------------------
 lines = String[]
 push!(lines, @sprintf("Set %s: window = last %.0f days of each branch (branch day %.0f–%.0f).  Wind fixed, τ_eq = %.3f N/m².  γ₂/z20 source: %s.", SET, WINDOW, C[Symbol("140W")].tend - WINDOW, C[Symbol("140W")].tend, τ_eq, C[:src]))
-push!(lines, @sprintf("%-20s %6s %6s %7s %7s %7s %7s %7s %7s %7s %7s %7s", "branch", "ΔT", "γ₂", "z20mid", "z20W", "z20E", "core140", "zc140", "Tc140", "core110", "zc110", "sstE"))
+push!(lines, @sprintf("%-20s %6s %6s %7s %7s %7s %7s %7s %7s %7s %7s %7s %7s", "branch", "ΔT", "γ₂", "z20mid", "z20W", "z20E", "zN2_140", "core140", "zc140", "Tc140", "core110", "zc110", "sstE"))
 for r in R
     s = r[Symbol("140W")]; e = r[Symbol("110W")]
-    push!(lines, @sprintf("%-20s %+6.1f %6.4f %7.0f %7.0f %7.0f %7.2f %7.0f %7.1f %7.2f %7.0f %7.2f", r[:label], r[:dT], r[:γ₂], r[:z20m], r[:z20w], r[:z20e], s.core, s.zcore, s.Tcore, e.core, e.zcore, r[:sste]))
+    push!(lines, @sprintf("%-20s %+6.1f %6.4f %7.0f %7.0f %7.0f %7.0f %7.2f %7.0f %7.1f %7.2f %7.0f %7.2f", r[:label], r[:dT], r[:γ₂], r[:z20m], r[:z20w], r[:z20e], s.zN2max, s.core, s.zcore, s.Tcore, e.core, e.zcore, r[:sste]))
 end
 push!(lines, "")
 push!(lines, "Response relative to control (branch − control):")
-push!(lines, @sprintf("%-20s %8s %8s %8s %8s %8s %8s %8s", "branch", "Δγ₂ %", "Δz20mid", "Δzc140", "Δcore140", "ΔTc140", "Δusurf", "ΔsstE"))
+push!(lines, @sprintf("%-20s %8s %8s %8s %8s %8s %8s %8s %8s", "branch", "Δγ₂ %", "Δz20mid", "ΔzN2_140", "Δzc140", "Δcore140", "ΔTc140", "Δusurf", "ΔsstE"))
 for r in R[2:end]
     s = r[Symbol("140W")]; c = C[Symbol("140W")]
-    push!(lines, @sprintf("%-20s %+8.1f %+8.1f %+8.1f %+8.3f %+8.2f %+8.3f %+8.2f", r[:label], 100(r[:γ₂]/C[:γ₂]-1), r[:z20m]-C[:z20m], s.zcore-c.zcore, s.core-c.core, s.Tcore-c.Tcore, s.usurf-c.usurf, r[:sste]-C[:sste]))
+    push!(lines, @sprintf("%-20s %+8.1f %+8.1f %+8.1f %+8.1f %+8.3f %+8.2f %+8.3f %+8.2f", r[:label], 100(r[:γ₂]/C[:γ₂]-1), r[:z20m]-C[:z20m], s.zN2max-c.zN2max, s.zcore-c.zcore, s.core-c.core, s.Tcore-c.Tcore, s.usurf-c.usurf, r[:sste]-C[:sste]))
 end
 # ---- scaling fit on the A series (control, A1, A2, A4): log(H), log(U) vs log(γ₂) ----
 A = [r for r in R if r[:dTe] == 0 && r[:dTs] == 0]
 lg = log.([r[:γ₂] for r in A])
 fit(y) = (X = hcat(ones(length(lg)), lg); b = X \ log.(y); b[2])
-expH  = fit([-r[:z20m] for r in A]);  expHc = fit([-r[Symbol("140W")].zcore for r in A])
+expH  = fit([-r[:z20m] for r in A]);  expHc = fit([-r[Symbol("140W")].zcore for r in A]);  expHn = fit([-r[Symbol("140W")].zN2max for r in A])
 expU  = fit([r[Symbol("140W")].core for r in A]); expUb = fit([r[Symbol("140W")].euc_mean for r in A])
 push!(lines, "")
 push!(lines, "Pedlosky (1987) scaling test on the A series (wind fixed, so only γ₂ varies):")
 push!(lines, @sprintf("  fitted exponent of z20 (mid-basin) vs γ₂:  %+.2f   (inertial prediction −0.50)", expH))
+push!(lines, @sprintf("  fitted exponent of z(max N²) at 140W vs γ₂: %+.2f   (inertial prediction −0.50; the isotherm z20 moves DOWN with added heat, so this is the better H)", expHn))
 push!(lines, @sprintf("  fitted exponent of EUC core depth vs γ₂:   %+.2f   (inertial prediction −0.50)", expHc))
 push!(lines, @sprintf("  fitted exponent of EUC core speed vs γ₂:   %+.2f   (inertial prediction +0.25)", expU))
 push!(lines, @sprintf("  fitted exponent of band-mean EUC vs γ₂:    %+.2f   (inertial prediction +0.25)", expUb))
-push!(lines, "  (1-year branches: transient response; the thermocline adjusts over years — repeat with BRANCH_YEARS=5)")
+SET == "1y" && push!(lines, "  (1-year branches: transient response; the thermocline adjusts over years — repeat with BRANCH_YEARS=5)")
 foreach(println, lines); open(joinpath(OUTDIR, "cmp_summary.txt"), "w") do io; foreach(l -> println(io, l), lines); end
 
 # ---------------------------------------------------------------------------
@@ -203,17 +204,17 @@ function panel(pos, title, ylab, y; logx = false, pred = nothing, fitexp = nothi
     xs = logx ? [r[:γ₂] for r in R] : dTs
     for (i, r) in enumerate(R); scatter!(a, [xs[i]], [y[i]], color = cols[i], marker = mk[i], markersize = 16, label = r[:label]); end
     if logx && pred !== nothing
-        xa = [r[:γ₂] for r in A]; ya = y[[findfirst(==(r), R) for r in A]]
+        xa = [r[:γ₂] for r in A]; ya = y[[findfirst(x -> x === r, R) for r in A]]
         xx = range(minimum(xa)*0.98, maximum(xa)*1.02, length = 20)
         lines!(a, xx, ya[1] .* (xx ./ xa[1]).^pred, color = :gray50, linestyle = :dash, label = @sprintf("inertial  γ₂^%+.2f", pred))
         fitexp !== nothing && lines!(a, xx, ya[1] .* (xx ./ xa[1]).^fitexp, color = :firebrick, label = @sprintf("A-series fit  γ₂^%+.2f", fitexp))
     end
     a
 end
-a = panel((1, 1), "mid-basin z20", "m", [-r[:z20m] for r in R]); axislegend(a, position = :rt, labelsize = 9)
+a = panel((1, 1), "thermocline depth, 140W (max N²)", "m", [-r[Symbol("140W")].zN2max for r in R]); axislegend(a, position = :rt, labelsize = 9)
 panel((1, 2), "EUC core depth, 140W", "m", [-r[Symbol("140W")].zcore for r in R])
 panel((1, 3), "EUC core speed, 140W (core band)", "m/s", [r[Symbol("140W")].core for r in R])
-a = panel((2, 1), "mid-basin z20 vs γ₂", "m", [-r[:z20m] for r in R]; logx = true, pred = -0.5, fitexp = expH); axislegend(a, position = :rt, labelsize = 9)
+a = panel((2, 1), "thermocline depth (max N²) vs γ₂", "m", [-r[Symbol("140W")].zN2max for r in R]; logx = true, pred = -0.5, fitexp = expHn); axislegend(a, position = :rt, labelsize = 9)
 panel((2, 2), "EUC core depth vs γ₂", "m", [-r[Symbol("140W")].zcore for r in R]; logx = true, pred = -0.5, fitexp = expHc)
 panel((2, 3), "EUC core speed vs γ₂", "m/s", [r[Symbol("140W")].core for r in R]; logx = true, pred = 0.25, fitexp = expU)
 save(joinpath(OUTDIR, "cmp_scaling.png"), fig); println("wrote cmp_scaling.png")
