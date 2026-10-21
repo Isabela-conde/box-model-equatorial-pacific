@@ -10,39 +10,60 @@ filename = "toy_model"
 # ---------------------------------------------------------------------------
 # WHICH RUN?  Chosen at submit time so several branches can sit in the queue
 # together without editing this file between submissions:
-#     qsub -v BRANCH=control   run_toy_model.sh
-#     qsub -v BRANCH=cd2e-3    run_toy_model.sh
-#     qsub run_toy_model.sh                      (no BRANCH → "spinup")
+#     qsub -v BRANCH=control                 run_toy_model.sh
+#     qsub -v BRANCH=warmA2                  run_toy_model.sh
+#     qsub -v BRANCH=warmA2,BRANCH_YEARS=5   run_toy_model.sh      (5-year branch)
+#     qsub run_toy_model.sh                                         (no BRANCH → "spinup")
 #   spinup     : 5-year run from rest (1825 d, 30-day means, checkpoint every 100 d)
-#   control    : 1-year branch from the spin-up checkpoint, nothing changed
-#   kappa3e-3  : branch, Ri-scheme tracer diffusivity κ₀ 1e-2 → 3e-3  (2026-10-21: no SEC change)
-#   nu5e-3     : branch, Ri-scheme shear viscosity    ν₀ 1e-2 → 5e-3  (2026-10-21: worse)
-#   cd2e-3     : branch, wind drag back to the OLD 2e-3 (τ_eq 0.071 → 0.118 N/m²) for attribution
+#   control    : branch from the spin-up checkpoint, nothing changed
+#   --- warming experiments (Paper 1), all branches from the same checkpoint ---
+#   warmA1/2/4 : protocol A, surface warming: SST targets +1/+2/+4 K, sink unchanged
+#   warmB2     : protocol B, ventilated warming: SST targets +2 K AND sink surface ref +2 K
+#   warmC2     : protocol C, pattern warming: warm pool +2 K, cold tongue +4 K
+#   --- older sensitivity branches (2026-10-21) ---
+#   kappa3e-3  : Ri-scheme tracer diffusivity κ₀ 1e-2 → 3e-3  (no SEC change)
+#   nu5e-3     : Ri-scheme shear viscosity    ν₀ 1e-2 → 5e-3  (worse)
+#   cd2e-3     : wind drag back to the OLD 2e-3 (τ_eq 0.071 → 0.118 N/m²) for attribution
 # Production defaults (2026-10-21): Ri scheme at ν₀ = κ₀ = 1e-2 (Pr = 1), cᴰ = 1.2e-3.
-# Branch stop_time is ABSOLUTE = checkpoint time + branch length.  The checkpointer
-# fires every 100 days, so a 1825-day spin-up's last checkpoint is at day 1800.
-# ⚠ spinup_ckpt below still points at the cᴰ = 2e-3 spin-up (toy_model_2026-10-21_005204);
-#   update it to the new cᴰ = 1.2e-3 spin-up's checkpoint before running branches.
+# BRANCH_YEARS (default 1) sets every branch's length; compare perturbations with a
+# control of the SAME length.  Branch stop_time is ABSOLUTE = checkpoint time (1800 d)
+# + BRANCH_YEARS × 365 d; the checkpointer fires every 100 days, hence day 1800.
+# spinup_ckpt = the PRODUCTION spin-up (cᴰ = 1.2e-3, S-restoring fix, discrete sponges/sink,
+# no wall fluxes), run 2026-10-21; its last checkpoint is model day 1800.  Every control
+# and perturbation branch starts from this file.
 # ---------------------------------------------------------------------------
 branch      = get(ENV, "BRANCH", isempty(ARGS) ? "spinup" : ARGS[1])
-spinup_ckpt = "runs/toy_model_2026-10-21_005204/checkpoint_iteration259762.jld2"   # model day 1800
+spinup_ckpt = "runs/toy_model_spinup_2026-10-21_140641/checkpoint_iteration259762.jld2"   # model day 1800
 
 # defaults = the spin-up configuration; each branch overrides what it tests
 κ₀_Ri = 1e-2;  ν₀_Ri = 1e-2;  cᴰ = 1.2e-3
+ΔT_target = 0.0;  ΔT_east = 0.0;  ΔT_sink = 0.0
+branch_years = parse(Float64, get(ENV, "BRANCH_YEARS", "1"))
+branch_stop  = 1800days + branch_years * 365days        # checkpoint time + branch length
 if branch == "spinup"
-    pickup = false;        stop_time = 1825days;             save_interval = 30days
+    pickup = false;        stop_time = 1825days;     save_interval = 30days
 elseif branch == "control"
-    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days
+elseif branch == "warmA1"
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ΔT_target = 1.0
+elseif branch == "warmA2"
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ΔT_target = 2.0
+elseif branch == "warmA4"
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ΔT_target = 4.0
+elseif branch == "warmB2"
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ΔT_target = 2.0;  ΔT_sink = 2.0
+elseif branch == "warmC2"
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ΔT_target = 2.0;  ΔT_east = 2.0
 elseif branch == "kappa3e-3"
-    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  κ₀_Ri = 3e-3
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  κ₀_Ri = 3e-3
 elseif branch == "nu5e-3"
-    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  ν₀_Ri = 5e-3
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  ν₀_Ri = 5e-3
 elseif branch == "cd2e-3"
-    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  cᴰ = 2e-3
+    pickup = spinup_ckpt;  stop_time = branch_stop;  save_interval = 10days;  cᴰ = 2e-3
 else
-    error("unknown BRANCH = \"$branch\" (use spinup, control, kappa3e-3, nu5e-3 or cd2e-3)")
+    error("unknown BRANCH = \"$branch\" (use spinup, control, warmA1, warmA2, warmA4, warmB2, warmC2, kappa3e-3, nu5e-3 or cd2e-3)")
 end
-println("BRANCH = $branch | pickup = $pickup | stop_time = $(stop_time/days) days | κ₀_Ri = $κ₀_Ri | ν₀_Ri = $ν₀_Ri | cᴰ = $cᴰ")
+println("BRANCH = $branch | pickup = $pickup | stop_time = $(stop_time/days) days | κ₀_Ri = $κ₀_Ri | ν₀_Ri = $ν₀_Ri | cᴰ = $cᴰ | ΔT_target = $ΔT_target | ΔT_east = $ΔT_east | ΔT_sink = $ΔT_sink")
 
 timestamp = Dates.format(now(), "yyyy-mm-dd_HHMMSS")
 output_dir = joinpath("runs", filename * "_" * branch * "_" * timestamp)
@@ -80,6 +101,9 @@ run_model(output_dir;
           κ₀_Ri = κ₀_Ri,
           ν₀_Ri = ν₀_Ri,
           cᴰ = cᴰ,
+          ΔT_target = ΔT_target,
+          ΔT_east = ΔT_east,
+          ΔT_sink = ΔT_sink,
           relative_wind = false,
           poleward_sink = true)
 
@@ -148,7 +172,10 @@ plot_surface_last100(filepath, output_dir; window_days = 100)
 # Surface heat budget — reconstructs the restoring flux from the saved SST, so its
 # λ_T / target params MUST match toy_model.jl (λ_T doubled to 4e-5 on 2026-10-20;
 # the function's own default is still 2e-5).
-plot_surface_heat_budget(filepath, output_dir; λ_T = 4e-5)
+# Targets follow the branch (warming experiments shift them), otherwise the plot
+# reconstructs the restoring flux against the wrong SST targets.
+plot_surface_heat_budget(filepath, output_dir; λ_T = 4e-5,
+                         T_warm = 29.5 + ΔT_target, T_cold = 24.0 + ΔT_target + ΔT_east)
 
 
 

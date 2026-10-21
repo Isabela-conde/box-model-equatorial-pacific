@@ -231,7 +231,11 @@ end
 function build_model(; relative_wind = true, poleward_sink = true,
                        κ₀_Ri = 1e-2,   # Ri-scheme max tracer diffusivity (branch experiments)
                        ν₀_Ri = 1e-2,   # Ri-scheme max shear viscosity    (branch experiments)
-                       cᴰ    = 1.2e-3) # wind drag coefficient (standard bulk value; was 2e-3 until 2026-10-21)
+                       cᴰ    = 1.2e-3, # wind drag coefficient (standard bulk value; was 2e-3 until 2026-10-21)
+                       # --- warming experiments (K), all zero in the control ---
+                       ΔT_target = 0.0,  # added to BOTH SST-restoring targets (warm pool and cold tongue)
+                       ΔT_east   = 0.0,  # EXTRA added to the cold-tongue target only (pattern warming)
+                       ΔT_sink   = 0.0)  # added to the sink's surface reference (ventilated warming)
 
     Nx = 600         # Δx ≈ 25 km (was 140 → 107 km)
     Ny = 150         # ±15° at Δy ≈ 22 km (was 60 → 55 km)
@@ -277,8 +281,12 @@ function build_model(; relative_wind = true, poleward_sink = true,
     # 2026-10-20_182149).  Doubling pins SST harder without touching the dynamics; the
     # price is a damped SST response in the warming experiments.
     λ_T         = 4e-5
-    T_warm      = 29.5     # western warm-pool target
-    T_cold      = 24.0     # eastern cold-tongue target
+    # Warming experiments shift the targets (ΔT_* are build_model keywords, 0 in the control):
+    #   protocol A (surface warming):   ΔT_target = +1, +2, +4
+    #   protocol B (ventilated warming): ΔT_target = +2 AND ΔT_sink = +2 (source water warms too)
+    #   protocol C (pattern warming):    ΔT_target = +2 AND ΔT_east = +2 (cold tongue +4, warm pool +2)
+    T_warm      = 29.5 + ΔT_target             # western warm-pool target
+    T_cold      = 24.0 + ΔT_target + ΔT_east   # eastern cold-tongue target
     x_front     = 0.6      # front location as fraction of basin width (W→E)
     front_width = 0.18     # front sharpness (fraction of Lx)
 
@@ -402,7 +410,7 @@ function build_model(; relative_wind = true, poleward_sink = true,
     # Poleward heat sink: relax T toward a cool extratropical profile in the N/S
     # bands so the net tropical heat uptake is exported and the basin equilibrates.
     λ_T_sink   = 1 / 150days
-    T_surf_ref = 22.0      # cool extratropical surface (°C)
+    T_surf_ref = 22.0 + ΔT_sink   # cool extratropical surface (°C); ΔT_sink ≠ 0 only in protocol B
     T_deep_ref = 3.5       # deep reference (matches initial deep T → no deep nudging)
     z_ref      = -150.0    # reference thermocline depth (m)
     d_ref      = 120.0     # reference thermocline thickness (m)
@@ -572,11 +580,15 @@ function run_model(output_dir;
                    pickup                   = false,    # false = from rest; or path to a checkpoint file
                    κ₀_Ri                    = 1e-2,     # Ri-scheme tracer diffusivity (see build_model)
                    ν₀_Ri                    = 1e-2,     # Ri-scheme shear viscosity
-                   cᴰ                       = 1.2e-3)   # wind drag coefficient (see build_model)
+                   cᴰ                       = 1.2e-3,   # wind drag coefficient (see build_model)
+                   ΔT_target                = 0.0,      # warming experiments (K), see build_model
+                   ΔT_east                  = 0.0,
+                   ΔT_sink                  = 0.0)
 
     model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
                                                poleward_sink = poleward_sink,
-                                               κ₀_Ri = κ₀_Ri, ν₀_Ri = ν₀_Ri, cᴰ = cᴰ)
+                                               κ₀_Ri = κ₀_Ri, ν₀_Ri = ν₀_Ri, cᴰ = cᴰ,
+                                               ΔT_target = ΔT_target, ΔT_east = ΔT_east, ΔT_sink = ΔT_sink)
 
     if plot_boundary_conditions
         plot_surface_wind_profile(grid, τx_parameters, output_dir)
