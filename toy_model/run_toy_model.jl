@@ -11,21 +11,24 @@ filename = "toy_model"
 # WHICH RUN?  Chosen at submit time so several branches can sit in the queue
 # together without editing this file between submissions:
 #     qsub -v BRANCH=control   run_toy_model.sh
-#     qsub -v BRANCH=nu5e-3    run_toy_model.sh
+#     qsub -v BRANCH=cd2e-3    run_toy_model.sh
 #     qsub run_toy_model.sh                      (no BRANCH → "spinup")
 #   spinup     : 5-year run from rest (1825 d, 30-day means, checkpoint every 100 d)
 #   control    : 1-year branch from the spin-up checkpoint, nothing changed
-#   kappa3e-3  : branch, Ri-scheme tracer diffusivity κ₀ 1e-2 → 3e-3  (done: no SEC change)
-#   nu5e-3     : branch, Ri-scheme shear viscosity    ν₀ 1e-2 → 5e-3  (SEC test 2)
-#   cd1.2e-3   : branch, wind drag cᴰ 2e-3 → 1.2e-3 (τ_eq 0.118 → 0.071 N/m²) (SEC test 3)
+#   kappa3e-3  : branch, Ri-scheme tracer diffusivity κ₀ 1e-2 → 3e-3  (2026-10-21: no SEC change)
+#   nu5e-3     : branch, Ri-scheme shear viscosity    ν₀ 1e-2 → 5e-3  (2026-10-21: worse)
+#   cd2e-3     : branch, wind drag back to the OLD 2e-3 (τ_eq 0.071 → 0.118 N/m²) for attribution
+# Production defaults (2026-10-21): Ri scheme at ν₀ = κ₀ = 1e-2 (Pr = 1), cᴰ = 1.2e-3.
 # Branch stop_time is ABSOLUTE = checkpoint time + branch length.  The checkpointer
-# fires every 100 days, so the 1825-day spin-up's last checkpoint is at day 1800.
+# fires every 100 days, so a 1825-day spin-up's last checkpoint is at day 1800.
+# ⚠ spinup_ckpt below still points at the cᴰ = 2e-3 spin-up (toy_model_2026-10-21_005204);
+#   update it to the new cᴰ = 1.2e-3 spin-up's checkpoint before running branches.
 # ---------------------------------------------------------------------------
 branch      = get(ENV, "BRANCH", isempty(ARGS) ? "spinup" : ARGS[1])
 spinup_ckpt = "runs/toy_model_2026-10-21_005204/checkpoint_iteration259762.jld2"   # model day 1800
 
 # defaults = the spin-up configuration; each branch overrides what it tests
-κ₀_Ri = 1e-2;  ν₀_Ri = 1e-2;  cᴰ = 2e-3
+κ₀_Ri = 1e-2;  ν₀_Ri = 1e-2;  cᴰ = 1.2e-3
 if branch == "spinup"
     pickup = false;        stop_time = 1825days;             save_interval = 30days
 elseif branch == "control"
@@ -34,10 +37,10 @@ elseif branch == "kappa3e-3"
     pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  κ₀_Ri = 3e-3
 elseif branch == "nu5e-3"
     pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  ν₀_Ri = 5e-3
-elseif branch == "cd1.2e-3"
-    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  cᴰ = 1.2e-3
+elseif branch == "cd2e-3"
+    pickup = spinup_ckpt;  stop_time = 1800days + 365days;   save_interval = 10days;  cᴰ = 2e-3
 else
-    error("unknown BRANCH = \"$branch\" (use spinup, control, kappa3e-3, nu5e-3 or cd1.2e-3)")
+    error("unknown BRANCH = \"$branch\" (use spinup, control, kappa3e-3, nu5e-3 or cd2e-3)")
 end
 println("BRANCH = $branch | pickup = $pickup | stop_time = $(stop_time/days) days | κ₀_Ri = $κ₀_Ri | ν₀_Ri = $ν₀_Ri | cᴰ = $cᴰ")
 

@@ -231,7 +231,7 @@ end
 function build_model(; relative_wind = true, poleward_sink = true,
                        κ₀_Ri = 1e-2,   # Ri-scheme max tracer diffusivity (branch experiments)
                        ν₀_Ri = 1e-2,   # Ri-scheme max shear viscosity    (branch experiments)
-                       cᴰ    = 2e-3)   # wind drag coefficient; 1.2e-3 is the standard value (branch experiments)
+                       cᴰ    = 1.2e-3) # wind drag coefficient (standard bulk value; was 2e-3 until 2026-10-21)
 
     Nx = 600         # Δx ≈ 25 km (was 140 → 107 km)
     Ny = 150         # ±15° at Δy ≈ 22 km (was 60 → 55 km)
@@ -323,8 +323,11 @@ function build_model(; relative_wind = true, poleward_sink = true,
     u₁₀_trades    = 8.0    # easterly maximum at the trade latitudes ±jet_lat
     jet_lat       = 10   # trade peak latitude (±10°, retuned for the ±15° domain)
     u₁₀_wall_drop = 4.0    # easterly reduction at the N/S walls (→ wall ≈ 3.6 m/s at ±15°)
-    # cᴰ is a build_model keyword (default 2e-3).  With u₁₀ = 7 m/s that gives
-    # τ_eq = 0.118 N m⁻², ~2× the observed annual mean at 140W; cᴰ = 1.2e-3 → 0.071.
+    # cᴰ is a build_model keyword, default 1.2e-3 (standard bulk value): with u₁₀ = 7 m/s
+    # τ_eq = 0.071 N m⁻², close to the observed annual mean at 140W.  The old 2e-3 gave
+    # 0.118 (~2× observed); in 1-yr branch tests (2026-10-21) it was the ONLY change that
+    # restored a westward surface layer over the EUC (u_surf −0.31, zero crossing ~30 m)
+    # and it cut the cold-tongue bias from 6 K to 2.5 K.  Mixing-scheme changes did not.
     ρₐ          = 1.2
     spinup_time = 10days
 
@@ -569,7 +572,7 @@ function run_model(output_dir;
                    pickup                   = false,    # false = from rest; or path to a checkpoint file
                    κ₀_Ri                    = 1e-2,     # Ri-scheme tracer diffusivity (see build_model)
                    ν₀_Ri                    = 1e-2,     # Ri-scheme shear viscosity
-                   cᴰ                       = 2e-3)     # wind drag coefficient
+                   cᴰ                       = 1.2e-3)   # wind drag coefficient (see build_model)
 
     model, grid, τx_parameters = build_model(; relative_wind = relative_wind,
                                                poleward_sink = poleward_sink,
