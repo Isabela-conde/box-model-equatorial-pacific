@@ -42,7 +42,8 @@ for (i, r) in enumerate(R)
     a = Axis(fig[i, 3], title = "$(r.label):  N² (s⁻²)", xticks = ticks, xticklabelrotation = 0.5)
     h2 = heatmap!(a, xkm, r.zI[kN], r.N2[:, kN], colormap = :viridis, colorrange = (0, 4e-4))
     a = Axis(fig[i, 5], title = "$(r.label):  u (m/s)", xticks = ticks, xticklabelrotation = 0.5)
-    h3 = heatmap!(a, xkm, r.zC[kT], r.u[:, kT], colormap = :balance, colorrange = (-0.8, 0.8)); contour!(a, xkm, r.zC[kT], r.u[:, kT], levels = [0.0], color = :black, linewidth = 0.8)
+    # a ±5° band mean dilutes the EUC (half-width ~1.5°) about 3×, so the range is tighter than for core-band plots
+    h3 = heatmap!(a, xkm, r.zC[kT], r.u[:, kT], colormap = :balance, colorrange = (-0.5, 0.5)); contour!(a, xkm, r.zC[kT], r.u[:, kT], levels = [0.0], color = :black, linewidth = 0.8)
     i == 1 && (Colorbar(fig[1, 2], h1, label = "°C"); Colorbar(fig[1, 4], h2, label = "s⁻²"); Colorbar(fig[1, 6], h3, label = "m/s"))
 end
 save(joinpath(OUTDIR, @sprintf("sections_%ddeg.png", HALFDEG)), fig); println("wrote sections_$(HALFDEG)deg.png")
