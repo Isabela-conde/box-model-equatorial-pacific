@@ -20,17 +20,30 @@ using SeawaterPolynomials, SeawaterPolynomials.TEOS10
 # ---------------------------------------------------------------------------
 # WHICH RUNS (edit here)
 # ---------------------------------------------------------------------------
-DL = expanduser("~/Downloads")
-BRANCHES = [   # (label, folder, ΔT_target, ΔT_east, ΔT_sink)  — control FIRST
-    ("control", joinpath(DL, "toy_model_control_2026-10-21_180403"), 0.0, 0.0, 0.0),
-    ("A1 +1 K", joinpath(DL, "toy_model_warmA1_2026-10-21_182550"),  1.0, 0.0, 0.0),
-    ("A2 +2 K", joinpath(DL, "toy_model_warmA2_2026-10-21_182936"),  2.0, 0.0, 0.0),
-    ("A4 +4 K", joinpath(DL, "toy_model_warmA4_2026-10-21_184307"),  4.0, 0.0, 0.0),
-    ("B2 +2 K ventilated", joinpath(DL, "toy_model_warmB2_2026-10-21_185704"), 2.0, 0.0, 2.0),
-    ("C2 +2/+4 K pattern", joinpath(DL, "toy_model_warmC2_2026-10-21_185857"), 2.0, 2.0, 0.0),
-]
-WINDOW = length(ARGS) ≥ 1 ? parse(Float64, ARGS[1]) : 100.0
-OUTDIR = joinpath(DL, "branch_comparison_2026-10-21")
+DL  = expanduser("~/Downloads")      # where the run folders live (laptop); on Gadi use "runs"
+SET = "5y"                            # "1y" = the one-year branches, "5y" = the five-year branches
+SETS = Dict(   # (label, folder, ΔT_target, ΔT_east, ΔT_sink)  — control FIRST
+    "1y" => [
+        ("control", joinpath(DL, "toy_model_control_2026-10-21_180403"), 0.0, 0.0, 0.0),
+        ("A1 +1 K", joinpath(DL, "toy_model_warmA1_2026-10-21_182550"),  1.0, 0.0, 0.0),
+        ("A2 +2 K", joinpath(DL, "toy_model_warmA2_2026-10-21_182936"),  2.0, 0.0, 0.0),
+        ("A4 +4 K", joinpath(DL, "toy_model_warmA4_2026-10-21_184307"),  4.0, 0.0, 0.0),
+        ("B2 +2 K ventilated", joinpath(DL, "toy_model_warmB2_2026-10-21_185704"), 2.0, 0.0, 2.0),
+        ("C2 +2/+4 K pattern", joinpath(DL, "toy_model_warmC2_2026-10-21_185857"), 2.0, 2.0, 0.0)],
+    "5y" => [
+        ("control", joinpath(DL, "toy_model_control_2026-10-21_233303"), 0.0, 0.0, 0.0),
+        ("A1 +1 K", joinpath(DL, "toy_model_warmA1_2026-10-22_001758"),  1.0, 0.0, 0.0),
+        ("A2 +2 K", joinpath(DL, "toy_model_warmA2_2026-10-22_005915"),  2.0, 0.0, 0.0),
+        ("A4 +4 K", joinpath(DL, "toy_model_warmA4_2026-10-22_010512"),  4.0, 0.0, 0.0),
+        ("B2 +2 K ventilated", joinpath(DL, "toy_model_warmB2_2026-10-22_011949"), 2.0, 0.0, 2.0),
+        ("C2 +2/+4 K pattern", joinpath(DL, "toy_model_warmC2_2026-10-22_013131"), 2.0, 2.0, 0.0)])
+BRANCHES = SETS[SET]
+WINDOW = length(ARGS) ≥ 1 ? parse(Float64, ARGS[1]) : (SET == "5y" ? 365.0 : 100.0)   # 5-yr set: average a full year
+OUTDIR = joinpath(DL, "branch_comparison_$(SET)")
+# If a run folder has NO toy_model.jld2 (the 3-D file is ~28 GB per 5-year branch and need not be
+# downloaded), γ₂ / z20 / SST are taken from the slice files instead and the band-section figure
+# is skipped.  The 3-D route uses the mid-basin |y|≤250 km band; the slice route uses the 140W
+# section (|y|≤100 km) for γ₂ and the y-mean file for z20 — the summary says which was used.
 mkpath(OUTDIR)
 cols = [:black, :goldenrod, :firebrick, :purple, :royalblue, :seagreen]
 styles = [:solid, :solid, :solid, :solid, :dash, :dot]
@@ -76,20 +89,32 @@ for (lab, dir, dT, dTe, dTs) in BRANCHES
                            euc_mean = mean(euc_t), euc_std = std(euc_t), usurf = u[end], u25 = u[argmin(abs.(zC .+ 25))],
                            z20 = zT(T, 20.0), zN2max = zI[argmax(N2)], tend)
     end
-    # 3-D window mean: band sections, thermocline contrast → γ₂, west/east z20, SST
-    f3 = jldopen(joinpath(dir, "toy_model.jld2"), "r"); its3, t3 = iters_times(f3, "T"); tend = t3[end]; sel3 = its3[t3 .>= tend - WINDOW]
-    T3 = mean([strip(f3["timeseries/T/$k"]) for k in sel3]); u3 = mean([strip(f3["timeseries/u/$k"]) for k in sel3]); close(f3)
-    Teq = dropdims(mean(T3[:, jband, :]; dims = 2); dims = 2); ueq = dropdims(mean(u3[:, jband, :]; dims = 2); dims = 2)
-    # reduced gravity across the thermocline: band-mean T at 20 m minus T at 300 m, mid-basin (x = 0.4–0.6 Lx)
-    im = round(Int, 0.4Nx):round(Int, 0.6Nx)
-    Tup = mean(Teq[im, argmin(abs.(zC .+ 20))]); Tdn = mean(Teq[im, argmin(abs.(zC .+ 300))])
-    α = 2.5e-4                                   # thermal expansion at ~25 °C (K⁻¹); salinity contribution small here
+    α  = 2.5e-4                                  # thermal expansion at ~25 °C (K⁻¹); salinity contribution small here
+    im = round(Int, 0.4Nx):round(Int, 0.6Nx)      # "mid-basin" = x = 0.4–0.6 Lx
+    k20 = argmin(abs.(zC .+ 20)); k300 = argmin(abs.(zC .+ 300))
+    if isfile(joinpath(dir, "toy_model.jld2"))
+        # 3-D window mean: band sections, thermocline contrast → γ₂, west/east z20, SST
+        f3 = jldopen(joinpath(dir, "toy_model.jld2"), "r"); its3, t3 = iters_times(f3, "T"); tend = t3[end]; sel3 = its3[t3 .>= tend - WINDOW]
+        T3 = mean([strip(f3["timeseries/T/$k"]) for k in sel3]); u3 = mean([strip(f3["timeseries/u/$k"]) for k in sel3]); close(f3)
+        Teq = dropdims(mean(T3[:, jband, :]; dims = 2); dims = 2); ueq = dropdims(mean(u3[:, jband, :]; dims = 2); dims = 2)
+        Tup = mean(Teq[im, k20]); Tdn = mean(Teq[im, k300])
+        z20x = [zT(Teq[i, :], 20.0) for i in 1:Nx]
+        r[:sstw] = mean(T3[1:nw, jband, end]); r[:sste] = mean(T3[Nx-nw+1:Nx, jband, end])
+        kz = findall(zC .>= -350); r[:umax3] = maximum(ueq[:, kz]); r[:Teq] = Teq; r[:ueq] = ueq; r[:src] = "3-D band"
+    else
+        # slice-file route (no 3-D file): γ₂ from the 140W core-band profile, z20 from the y-mean file, SST from the surface file
+        s = r[Symbol("140W")]; Tup = s.T[k20]; Tdn = s.T[k300]
+        fy = jldopen(joinpath(dir, "toy_model_ymean.jld2"), "r"); itsy, ty = iters_times(fy, "T"); tend = ty[end]; sely = itsy[ty .>= tend - WINDOW]
+        Ty = mean([strip(fy["timeseries/T/$k"])[:, 1, :] for k in sely]); close(fy)
+        z20x = [zT(Ty[i, :], 20.0) for i in 1:Nx]
+        fs = jldopen(joinpath(dir, "toy_model_surface.jld2"), "r"); itss, tss = iters_times(fs, "T"); sels = itss[tss .>= tss[end] - WINDOW]
+        Ts = mean([strip(fs["timeseries/T/$k"])[:, :, 1] for k in sels]); close(fs)
+        r[:sstw] = mean(Ts[1:nw, jband]); r[:sste] = mean(Ts[Nx-nw+1:Nx, jband])
+        r[:umax3] = NaN; r[:Teq] = nothing; r[:ueq] = nothing; r[:src] = "slices (γ₂ at 140W, z20 y-mean)"
+    end
     r[:γ₂] = g*α*(Tup - Tdn); r[:ΔTtherm] = Tup - Tdn
-    z20x = [zT(Teq[i, :], 20.0) for i in 1:Nx]
     r[:z20w] = mean(filter(!isnan, z20x[1:nw])); r[:z20e] = mean(filter(!isnan, z20x[Nx-nw+1:Nx])); r[:z20m] = mean(filter(!isnan, z20x[im]))
-    r[:sstw] = mean(T3[1:nw, jband, end]); r[:sste] = mean(T3[Nx-nw+1:Nx, jband, end])
-    kz = findall(zC .>= -350); r[:umax3] = maximum(ueq[:, kz]); r[:Teq] = Teq; r[:ueq] = ueq
-    push!(R, r); println("loaded $lab")
+    push!(R, r); println("loaded $lab  [$(r[:src])]")
 end
 C = R[1]
 
@@ -97,7 +122,7 @@ C = R[1]
 # summary table
 # ---------------------------------------------------------------------------
 lines = String[]
-push!(lines, @sprintf("Window: last %.0f days of each branch (branch day %.0f–%.0f).  Wind fixed, τ_eq = %.3f N/m².", WINDOW, C[Symbol("140W")].tend - WINDOW, C[Symbol("140W")].tend, τ_eq))
+push!(lines, @sprintf("Set %s: window = last %.0f days of each branch (branch day %.0f–%.0f).  Wind fixed, τ_eq = %.3f N/m².  γ₂/z20 source: %s.", SET, WINDOW, C[Symbol("140W")].tend - WINDOW, C[Symbol("140W")].tend, τ_eq, C[:src]))
 push!(lines, @sprintf("%-20s %6s %6s %7s %7s %7s %7s %7s %7s %7s %7s %7s", "branch", "ΔT", "γ₂", "z20mid", "z20W", "z20E", "core140", "zc140", "Tc140", "core110", "zc110", "sstE"))
 for r in R
     s = r[Symbol("140W")]; e = r[Symbol("110W")]
@@ -146,8 +171,9 @@ end
 save(joinpath(OUTDIR, "cmp_profiles.png"), fig); println("wrote cmp_profiles.png")
 
 # ---------------------------------------------------------------------------
-# figure 2: band sections of the response
+# figure 2: band sections of the response (needs the 3-D file in every run folder)
 # ---------------------------------------------------------------------------
+if all(r[:Teq] !== nothing for r in R)
 fig = Figure(size = (1600, 1500))
 Label(fig[0, 1:4], "Equatorial band (|y| ≤ 250 km): branch − control, last $(round(Int, WINDOW)) days.  Black = control 20 °C isotherm, colour = branch", fontsize = 16, tellwidth = false)
 xu = size(C[:ueq], 1) == Nx + 1 ? xF : xC
@@ -161,6 +187,9 @@ for (i, r) in enumerate(R[2:end])
     i == 1 && Colorbar(fig[1, 4], hm2, label = "ΔT (K)")
 end
 save(joinpath(OUTDIR, "cmp_sections.png"), fig); println("wrote cmp_sections.png")
+else
+    println("skipped cmp_sections.png (no toy_model.jld2 in at least one run folder)")
+end
 
 # ---------------------------------------------------------------------------
 # figure 3: scaling
