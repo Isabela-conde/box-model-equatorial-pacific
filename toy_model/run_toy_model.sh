@@ -43,11 +43,3 @@ export JULIA_CUDA_MEMORY_POOL=none
 # as the job runs, so you can `tail -f` it to watch progress / catch errors early.
 # (No -t: threads are irrelevant on the GPU.)
 julia --project=. run_toy_model.jl > run_${PBS_JOBID%%.*}.out 2>&1
-
-# ============================================================================
-# CPU fallback (the pre-rebuild setup). To go back:
-#   1. RectilinearGrid(GPU(), ...) -> RectilinearGrid(CPU(), ...) in toy_model.jl
-#   2. #PBS -q normal / -l ncpus=12 / -l mem=48GB  (drop ngpus, the cuda module,
-#      and the JULIA_CUDA_* exports)
-#   3. run with:   julia --project=. -t $PBS_NCPUS run_toy_model.jl
-# ============================================================================
