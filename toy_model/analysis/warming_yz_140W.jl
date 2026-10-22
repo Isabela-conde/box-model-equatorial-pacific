@@ -1,6 +1,6 @@
 # =============================================================================
 # warming_yz_140W.jl — surface-warming branches vs control at 140°W, latitude–depth:
-# control u(y,z) and Δu(y,z) for each warming amplitude, with the thermocline
+# control u(y,z) and Δu(y,z) for each warming amplitude; solid labelled contours = control mean u; thermocline
 # (depth of max ∂b/∂z) overlaid: black = control, red = warm run.
 #
 #     julia analysis/warming_yz_140W.jl          (edit RUNS / DL below)
@@ -41,18 +41,25 @@ for (lab, folder) in RUNS
 end
 C = R[1]
 
-fig = Figure(size = (2000, 640), fontsize = 17)
+fig = Figure(size = (1900, 550), fontsize = 17)
 Label(fig[0, 1:4], "Surface warming at 140°W: zonal velocity across latitude", fontsize = 18, tellwidth = false)
-zlim = (-350, 0); ylim = (-6, 6)
+zlim = (-350, 0); ylim = (-10, 10)
 a = Axis(fig[1, 1], title = "control  u (m/s)", xlabel = "latitude (°)", ylabel = "depth (m)")
-hm = heatmap!(a, lat, zC, C.U, colormap = :balance, colorrange = (-1.0, 1.0)); contour!(a, lat, zC, C.U, levels = 0.2:0.2:1.0, color = :black, linewidth = 0.7)
+# control mean-u contours: solid for eastward, dashed for westward, labelled inline
+ucontours!(ax, U) = begin
+    contour!(ax, lat, zC, U, levels = [0.2, 0.4, 0.6, 0.8, 1.0], color = :black, linewidth = 1.2, labels = true, labelsize = 13, labelcolor = :black)
+    contour!(ax, lat, zC, U, levels = [-0.4, -0.2], color = :black, linewidth = 1.2, linestyle = :dash, labels = true, labelsize = 13, labelcolor = :black)
+end
+hm = heatmap!(a, lat, zC, C.U, colormap = :balance, colorrange = (-1.0, 1.0))
+ucontours!(a, C.U)
 lines!(a, lat, C.zt, color = :black, linestyle = :dash, linewidth = 2.5)
 xlims!(a, ylim...); ylims!(a, zlim...)
 Colorbar(fig[2, 1], hm, label = "u (m/s)", vertical = false, flipaxis = false)
 hm2 = nothing
 for (i, r) in enumerate(R[2:end])
     a = Axis(fig[1, i + 1], title = "$(r.lab):  Δu (m/s)", xlabel = "latitude (°)")
-    global hm2 = heatmap!(a, lat, zC, r.U .- C.U, colormap = :balance, colorrange = (-0.15, 0.15)); contour!(a, lat, zC, C.U, levels = 0.2:0.2:1.0, color = :black, linewidth = 0.7)
+    global hm2 = heatmap!(a, lat, zC, r.U .- C.U, colormap = :balance, colorrange = (-0.15, 0.15))
+    ucontours!(a, C.U)   # control mean u
     lines!(a, lat, C.zt, color = :black, linestyle = :dash, linewidth = 2.5); lines!(a, lat, r.zt, color = :red, linestyle = :dash, linewidth = 2.5)
     xlims!(a, ylim...); ylims!(a, zlim...); hideydecorations!(a, grid = false)
 end
