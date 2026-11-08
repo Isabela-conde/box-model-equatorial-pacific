@@ -29,7 +29,7 @@ eos = TEOS10EquationOfState(reference_density = ρ₀)
 function thermocline(T, S)
     zt = [zI[argmax(diff([-g*SeawaterPolynomials.ρ′(T[j, k], S[j, k], zC[k], eos)/ρ₀ for k in 1:Nz]) ./ diff(zC))] for j in 1:Ny]
     [mean(zt[max(1, j-1):min(Ny, j+1)]) for j in 1:Ny]
-end
+endç
 
 R = []
 for (lab, folder) in RUNS
